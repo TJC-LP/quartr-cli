@@ -73,7 +73,7 @@ func (c *Client) GetBytes(ctx context.Context, path string, params url.Values) (
 
 	var lastHeader http.Header
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
 			return nil, nil, err

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -231,14 +231,13 @@ func chooseFields(rows []map[string]any, explicit []string) []string {
 	for k := range keys {
 		fields = append(fields, k)
 	}
-	sort.Strings(fields)
+	slices.Sort(fields)
 	return fields
 }
 
 func getPath(m map[string]any, path string) any {
-	parts := strings.Split(path, ".")
 	cur := any(m)
-	for _, p := range parts {
+	for p := range strings.SplitSeq(path, ".") {
 		cm, ok := cur.(map[string]any)
 		if !ok {
 			return nil

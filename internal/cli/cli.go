@@ -3,16 +3,15 @@ package cli
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"quartr-cli/internal/output"
@@ -107,11 +106,7 @@ func names(xs ...string) map[string]bool {
 func mergeParams(ms ...map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for _, m := range ms {
-		for k, v := range m {
-			if v {
-				out[k] = true
-			}
-		}
+		maps.Copy(out, m)
 	}
 	return out
 }
@@ -833,11 +828,9 @@ func parseCSV(s string) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
+	var out []string
+	for p := range strings.SplitSeq(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}
 	}
@@ -876,7 +869,7 @@ func extractStringField(obj map[string]any, field string) (string, error) {
 
 func extractStringFieldOnce(obj map[string]any, field string) (string, error) {
 	cur := any(obj)
-	for _, part := range strings.Split(field, ".") {
+	for part := range strings.SplitSeq(field, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return "", fmt.Errorf("field %q not found", field)
@@ -1013,16 +1006,3 @@ Examples:
 	}
 }
 
-func canonicalJSON(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
-}
-
-func sortedKeys(m map[string]resource) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
