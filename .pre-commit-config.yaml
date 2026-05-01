@@ -1,9 +1,9 @@
 repos:
   - repo: https://github.com/golangci/golangci-lint.git
-    rev: v1.64.5
+    rev: v2.12.0
     hooks:
       - id: golangci-lint
-        args: [--fix, --timeout=3m]
+        args: [--fix]
   - repo: local
     hooks:
       - id: go-test

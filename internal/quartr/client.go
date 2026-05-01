@@ -39,7 +39,7 @@ func (e *APIError) Error() string {
 		body = body[:800] + "…"
 	}
 	if body == "" {
-		return fmt.Sprintf("quartr api error: %s", e.Status)
+		return "quartr api error: " + e.Status
 	}
 	return fmt.Sprintf("quartr api error: %s: %s", e.Status, body)
 }
@@ -74,7 +74,7 @@ func (c *Client) GetBytes(ctx context.Context, path string, params url.Values) (
 	var lastHeader http.Header
 	var lastErr error
 	for attempt := range 3 {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -205,7 +205,7 @@ func (c *Client) Download(ctx context.Context, rawURL, apiKey string, w io.Write
 	if strings.TrimSpace(rawURL) == "" {
 		return nil, errors.New("empty download url")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

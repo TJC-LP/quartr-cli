@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -41,13 +42,9 @@ func extractGlobalFlags(args []string) (globalOverrides, []string, error) {
 		}
 
 		nameVal := strings.TrimPrefix(a, "--")
-		name := nameVal
-		val := ""
-		hasEq := false
-		if eq := strings.Index(nameVal, "="); eq >= 0 {
-			name = nameVal[:eq]
-			val = nameVal[eq+1:]
-			hasEq = true
+		name, val, hasEq := nameVal, "", false
+		if k, v, found := strings.Cut(nameVal, "="); found {
+			name, val, hasEq = k, v, true
 		}
 		if f, ok := boolFlags[name]; ok {
 			f()
@@ -137,7 +134,7 @@ func (lf listFlags) toParams(allowed paramSet, companyEndpoint bool) url.Values 
 		}
 	}
 	if lf.limit > 0 && allowed.allows("limit") {
-		p.Set("limit", fmt.Sprintf("%d", lf.limit))
+		p.Set("limit", strconv.Itoa(lf.limit))
 	}
 	add("cursor", lf.cursor)
 	add("direction", lf.direction)

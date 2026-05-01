@@ -250,7 +250,7 @@ func getPath(m map[string]any, path string) any {
 	return cur
 }
 
-func renderValue(v any, max int) string {
+func renderValue(v any, maxLen int) string {
 	if v == nil {
 		return ""
 	}
@@ -279,8 +279,8 @@ func renderValue(v any, max int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.TrimSpace(s)
-	if max > 0 && len(s) > max {
-		return s[:max-1] + "…"
+	if maxLen > 0 && len(s) > maxLen {
+		return s[:maxLen-1] + "…"
 	}
 	return s
 }

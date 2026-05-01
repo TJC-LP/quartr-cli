@@ -49,7 +49,7 @@ func LoadConfig(path string) (Config, error) {
 		}
 		return cfg, err
 	}
-	if len(strings.TrimSpace(string(b))) == 0 {
+	if strings.TrimSpace(string(b)) == "" {
 		return cfg, nil
 	}
 	if err := json.Unmarshal(b, &cfg); err != nil {
@@ -65,7 +65,7 @@ func SaveConfig(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(cfg, "", "  ")
+	b, err := json.MarshalIndent(cfg, "", "  ") //nolint:gosec // G117: APIKey field is credential storage by design
 	if err != nil {
 		return err
 	}
