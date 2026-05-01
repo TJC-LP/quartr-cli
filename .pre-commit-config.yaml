@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/golangci/golangci-lint.git
+    rev: v1.64.5
+    hooks:
+      - id: golangci-lint
+        args: [--fix, --timeout=3m]
+  - repo: local
+    hooks:
+      - id: go-test
+        name: go test
+        entry: go test ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        require_serial: true
