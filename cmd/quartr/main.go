@@ -1,3 +1,6 @@
+// Command quartr is a dependency-free Go CLI for the Quartr Public API v3.
+//
+// See README.md and `quartr --help` for usage.
 package main
 
 import (

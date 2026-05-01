@@ -1,3 +1,5 @@
+// Package quartr is the HTTP client and on-disk config layer for the Quartr
+// Public API v3. It depends only on the Go standard library.
 package quartr
 
 import (
@@ -15,10 +17,14 @@ import (
 )
 
 const (
+	// DefaultBaseURL is the production API endpoint used when no override is configured.
 	DefaultBaseURL = "https://api.quartr.com/public/v3"
-	UserAgent      = "quartr-cli/0.1.0"
+	// UserAgent is sent on every outbound request.
+	UserAgent = "quartr-cli/0.1.0"
 )
 
+// Client performs authenticated GET requests against the Quartr Public API.
+// It retries 429 and 5xx responses with backoff and honors Retry-After.
 type Client struct {
 	BaseURL string
 	APIKey  string
@@ -26,6 +32,9 @@ type Client struct {
 	Debug   bool
 }
 
+// APIError is returned when the API responds with a non-2xx status.
+// The full response Body is preserved (truncated at 800 chars in Error())
+// so callers can inspect the structured error payload.
 type APIError struct {
 	StatusCode int
 	Status     string
@@ -33,6 +42,8 @@ type APIError struct {
 	Headers    http.Header
 }
 
+// Error implements the error interface, returning a one-line summary
+// suitable for printing to a terminal.
 func (e *APIError) Error() string {
 	body := strings.TrimSpace(e.Body)
 	if len(body) > 800 {
@@ -44,6 +55,8 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("quartr api error: %s: %s", e.Status, body)
 }
 
+// NewClient constructs a Client. An empty baseURL falls back to DefaultBaseURL.
+// A non-positive timeout is replaced with 30 seconds.
 func NewClient(baseURL, apiKey string, timeout time.Duration, debug bool) *Client {
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = DefaultBaseURL
@@ -59,6 +72,10 @@ func NewClient(baseURL, apiKey string, timeout time.Duration, debug bool) *Clien
 	}
 }
 
+// GetBytes performs a GET against BaseURL+path with params as the query
+// string. The API key is sent in the x-api-key header. Retries on 429 and
+// 5xx with exponential backoff (250ms, 500ms) and Retry-After honoring.
+// Returns the raw body, response headers, and any error.
 func (c *Client) GetBytes(ctx context.Context, path string, params url.Values) ([]byte, http.Header, error) {
 	if c.APIKey == "" {
 		return nil, nil, errors.New("missing API key; set QUARTR_API_KEY or run `quartr auth login --api-key ...`")
@@ -156,6 +173,9 @@ func sleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// GetJSON wraps GetBytes and decodes the response into a generic
+// map[string]any. Numbers are preserved as json.Number to avoid float
+// coercion of int64-shaped IDs.
 func (c *Client) GetJSON(ctx context.Context, path string, params url.Values) (map[string]any, http.Header, error) {
 	body, hdr, err := c.GetBytes(ctx, path, params)
 	if err != nil {
@@ -170,6 +190,9 @@ func (c *Client) GetJSON(ctx context.Context, path string, params url.Values) (m
 	return out, hdr, nil
 }
 
+// BuildURL composes the request URL from BaseURL + path + params. If path
+// is itself a fully qualified URL it is used verbatim, allowing callers to
+// pass redirect targets returned by the API.
 func (c *Client) BuildURL(path string, params url.Values) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -201,6 +224,9 @@ func (c *Client) BuildURL(path string, params url.Values) (string, error) {
 	return u.String(), nil
 }
 
+// Download fetches rawURL and streams the body to w. apiKey is sent in the
+// x-api-key header only when non-empty; most Quartr file URLs are public,
+// so callers typically pass "".
 func (c *Client) Download(ctx context.Context, rawURL, apiKey string, w io.Writer) (http.Header, error) {
 	if strings.TrimSpace(rawURL) == "" {
 		return nil, errors.New("empty download url")

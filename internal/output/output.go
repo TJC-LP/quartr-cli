@@ -1,3 +1,6 @@
+// Package output formats CLI responses as table, json, csv, or raw.
+// Table and CSV output respect Options.Fields, including dotted paths
+// like "event.title" that traverse nested maps.
 package output
 
 import (
@@ -12,11 +15,18 @@ import (
 	"text/tabwriter"
 )
 
+// Options controls how Write renders an object.
+//
+// Format is one of "table" (default), "json", "csv", or "raw".
+// Fields is the explicit column list for table/csv output; empty means
+// auto-select preferred columns from the response.
 type Options struct {
 	Format string
 	Fields []string
 }
 
+// Write renders obj to w according to opts.Format. Returns an error for
+// unknown formats or write failures.
 func Write(w io.Writer, obj any, opts Options) error {
 	format := strings.ToLower(strings.TrimSpace(opts.Format))
 	if format == "" {
@@ -285,6 +295,9 @@ func renderValue(v any, maxLen int) string {
 	return s
 }
 
+// PrettyJSONBytes reformats raw JSON with 2-space indentation. Invalid
+// JSON is returned unchanged so callers can use it as a best-effort
+// formatter on untrusted input.
 func PrettyJSONBytes(b []byte) []byte {
 	var obj any
 	dec := json.NewDecoder(bytes.NewReader(b))
