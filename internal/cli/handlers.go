@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ func (a *app) handleAuth(args []string) error {
 	switch args[0] {
 	case "login", "set-key":
 		fs := newFlagSet("auth login", a.errOut)
-		apiKey := fs.String("api-key", "", "Quartr API key")
+		apiKeyStdin := fs.Bool("api-key-stdin", false, "read API key from stdin (one line, trimmed)")
 		baseURL := fs.String("base-url", a.cfg.BaseURL(), "API base URL")
 		format := fs.String("format", a.cfg.Format(), "default output format")
 		timeout := fs.String("timeout", a.cfg.Timeout(), "default HTTP timeout, e.g. 30s")
@@ -31,8 +32,18 @@ func (a *app) handleAuth(args []string) error {
 			return err
 		}
 
-		key := strings.TrimSpace(*apiKey)
-		if key == "" {
+		// Source priority: --api-key-stdin > resolved config (global flag/env/file) > interactive prompt.
+		// The global --api-key flag is honored via a.cfg.APIKey() but discouraged for `auth login`
+		// because the literal value leaks via argv (ps, history, scrollback, CI logs).
+		var key string
+		switch {
+		case *apiKeyStdin:
+			line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+			if err != nil && !errors.Is(err, io.EOF) {
+				return fmt.Errorf("read api key from stdin: %w", err)
+			}
+			key = strings.TrimSpace(line)
+		default:
 			key = strings.TrimSpace(a.cfg.APIKey())
 		}
 		if key == "" {
