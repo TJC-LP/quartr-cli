@@ -38,9 +38,21 @@ export QUARTR_API_KEY="your-api-key"
 Or store it locally:
 
 ```bash
-quartr auth login --api-key "$QUARTR_API_KEY"
+# Reads QUARTR_API_KEY from the environment if set; otherwise prompts.
+quartr auth login
 quartr auth show
 ```
+
+The key is written to `~/.config/quartr/config.json` with file mode `0600`.
+
+For piping the key in (e.g. from a secret store) without exposing it via argv:
+
+```bash
+op read op://Personal/Quartr/api_key | quartr auth login --api-key-stdin
+```
+
+`--api-key VALUE` is also supported but discouraged for `auth login` because
+the value leaks via shell history, `ps`, terminal scrollback, and CI logs.
 
 Config precedence is:
 

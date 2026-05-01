@@ -29,10 +29,19 @@ Precedence (highest to lowest):
 2. `QUARTR_API_KEY` env var
 3. `~/.config/quartr/config.json` (written 0600 by `quartr auth login`)
 
-For durable use:
+For durable use, run `quartr auth login` once with `QUARTR_API_KEY` exported —
+the command picks up the env var via the standard precedence and persists it
+to `~/.config/quartr/config.json`. Avoid `--api-key VALUE` on `auth login`:
+the literal key ends up in shell history, `ps`, scrollback, and CI logs.
+When piping from a secret store, use `--api-key-stdin`:
 
 ```bash
-quartr auth login --api-key "$QUARTR_API_KEY"
+# Idiomatic
+export QUARTR_API_KEY=...
+quartr auth login
+
+# Pipe from a secret store
+op read op://Personal/Quartr/api_key | quartr auth login --api-key-stdin
 ```
 
 For project-scoped use with a `.env` file:

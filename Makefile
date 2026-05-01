@@ -10,7 +10,7 @@ build:
 
 install:
 	go install ./cmd/quartr
-	@if [ -n "$$QUARTR_API_KEY" ]; then $(GOBIN)/quartr auth login --api-key "$$QUARTR_API_KEY"; fi
+	@if [ -n "$$QUARTR_API_KEY" ]; then printf '%s' "$$QUARTR_API_KEY" | $(GOBIN)/quartr auth login --api-key-stdin; fi
 
 test:
 	go test ./...
