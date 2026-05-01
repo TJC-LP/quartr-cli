@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+// Config is the on-disk shape of the persistent CLI config file.
+// Empty fields are omitted from the serialized JSON so partial updates
+// don't clobber values written by earlier `auth login` runs.
 type Config struct {
 	APIKey  string `json:"api_key,omitempty"`
 	BaseURL string `json:"base_url,omitempty"`
@@ -18,6 +21,9 @@ type Config struct {
 	Timeout string `json:"timeout,omitempty"`
 }
 
+// DefaultConfigPath returns the platform-appropriate config file path.
+// QUARTR_CONFIG overrides; otherwise uses %APPDATA% on Windows,
+// $XDG_CONFIG_HOME if set, or $HOME/.config/quartr/config.json.
 func DefaultConfigPath() string {
 	if p := os.Getenv("QUARTR_CONFIG"); strings.TrimSpace(p) != "" {
 		return p
@@ -37,6 +43,8 @@ func DefaultConfigPath() string {
 	return filepath.Join(home, ".config", "quartr", "config.json")
 }
 
+// LoadConfig reads a JSON config file from path. A missing file returns
+// the zero Config without error so first-run usage works seamlessly.
 func LoadConfig(path string) (Config, error) {
 	var cfg Config
 	if path == "" {
@@ -58,6 +66,8 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
+// SaveConfig writes cfg as pretty JSON to path with file mode 0600 and
+// directory mode 0700, since the file holds the API key.
 func SaveConfig(path string, cfg Config) error {
 	if path == "" {
 		path = DefaultConfigPath()
@@ -73,6 +83,8 @@ func SaveConfig(path string, cfg Config) error {
 	return os.WriteFile(path, b, 0o600)
 }
 
+// EffectiveTimeout parses timeout as a Go duration (e.g. "30s", "2m").
+// Empty or invalid input returns the 30-second default.
 func EffectiveTimeout(timeout string) time.Duration {
 	if strings.TrimSpace(timeout) == "" {
 		return 30 * time.Second
@@ -84,6 +96,9 @@ func EffectiveTimeout(timeout string) time.Duration {
 	return d
 }
 
+// MaskKey returns key with all but the first and last 4 characters replaced
+// by asterisks. Suitable for echoing the configured key back to the user
+// without disclosing it.
 func MaskKey(key string) string {
 	key = strings.TrimSpace(key)
 	if key == "" {

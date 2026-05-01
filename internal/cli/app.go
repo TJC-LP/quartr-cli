@@ -1,3 +1,8 @@
+// Package cli implements the quartr command-line interface: argument
+// parsing, command dispatch, request shaping, and pagination.
+//
+// All commands are driven from the resources map in resources.go. Adding
+// a new resource is a single map entry — no per-command handler code.
 package cli
 
 import (
@@ -9,6 +14,7 @@ import (
 	"quartr-cli/internal/quartr"
 )
 
+// Version is the CLI release string, surfaced via `quartr --version`.
 const Version = "0.1.0"
 
 type app struct {
@@ -27,6 +33,10 @@ func newApp(out, errOut io.Writer, cfg effectiveConfig) *app {
 	}
 }
 
+// Run is the package entry point. It parses args (without the leading
+// program name), builds the effective config from flags/env/file, and
+// dispatches the command. Returns the exit code: 0 for success, 1 for a
+// runtime error, 2 for a usage error.
 func Run(args []string, out, errOut io.Writer) int {
 	globals, commandArgs, err := extractGlobalFlags(args)
 	if err != nil {
