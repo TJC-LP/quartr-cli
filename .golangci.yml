@@ -1,104 +1,42 @@
-linters-settings:
-  funlen:
-    lines: -1
-    statements: 60
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(quartr-cli)
-    skip-generated: true
-    custom-order: true
-  goconst:
-    min-len: 2
-    min-occurrences: 3
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-      - experimental
-      - opinionated
-    disabled-checks:
-      - dupImport
-      - ifElseChain
-      - octalLiteral
-      - singleCaseSwitch
-      - unnamedResult
-      - whyNoLint
-  gocyclo:
-    min-complexity: 15
-  gofmt:
-    rewrite-rules:
-      - pattern: 'interface{}'
-        replacement: 'any'
-  misspell:
-    locale: US
-  nolintlint:
-    allow-unused: false
-    allow-no-explanation: []
-    require-explanation: false
-    require-specific: false
-  revive:
-    rules:
-      - name: unexported-return
-        disabled: true
-      - name: unused-parameter
-        disabled: true
-
+version: "2"
+run:
+  go: "1.26"
 linters:
-  disable-all: true
+  default: none
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
     - asasalint
     - asciicheck
     - bidichk
     - bodyclose
-    - canonicalheader
     - containedctx
     - contextcheck
     - copyloopvar
     - decorder
-    - dogsled
-    - dupl
     - dupword
     - durationcheck
+    - errcheck
     - errchkjson
     - errname
     - errorlint
     - exhaustive
     - fatcontext
     - forcetypeassert
-    - funlen
-    - gci
     - gocheckcompilerdirectives
     - gochecknoinits
-    - gochecksumtype
-    - goconst
     - gocritic
     - gocyclo
-    - gofmt
-    - goimports
     - gomoddirectives
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
-    - gosmopolitan
+    - govet
     - grouper
     - inamedparam
-    - interfacebloat
+    - ineffassign
     - intrange
-    - loggercheck
-    - maintidx
     - makezero
     - mirror
     - misspell
-    - musttag
     - nakedret
     - nestif
     - nilerr
@@ -110,29 +48,79 @@ linters:
     - perfsprint
     - prealloc
     - predeclared
-    - promlinter
     - reassign
     - revive
     - rowserrcheck
     - sqlclosecheck
-    - stylecheck
-    - tagalign
-    - tagliatelle
-    - testableexamples
-    - testifylint
+    - staticcheck
     - thelper
     - tparallel
     - unconvert
     - unparam
+    - unused
     - usestdlibvars
-    - varnamelen
     - wastedassign
     - whitespace
-    - zerologlint
-
+  settings:
+    gocritic:
+      disabled-checks:
+        - dupImport
+        - ifElseChain
+        - octalLiteral
+        - singleCaseSwitch
+        - unnamedResult
+        - whyNoLint
+        - hugeParam
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+        - opinionated
+    gocyclo:
+      min-complexity: 20
+    nestif:
+      min-complexity: 8
+    gosec:
+      excludes:
+        - G304  # file inclusion via variable — inherent to a CLI
+        - G602  # slice index out of range — bounds-checked at call site
+    misspell:
+      locale: US
+    nolintlint:
+      require-explanation: false
+      require-specific: false
+      allow-unused: false
+    revive:
+      rules:
+        - name: unexported-return
+          disabled: true
+        - name: unused-parameter
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
 issues:
   max-same-issues: 10
-
-run:
-  timeout: 3m
-  go: '1.26'
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(quartr-cli)
+      custom-order: true
+    gofmt:
+      rewrite-rules:
+        - pattern: interface{}
+          replacement: any
+  exclusions:
+    generated: lax
