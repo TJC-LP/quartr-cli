@@ -384,6 +384,80 @@ func TestCompaniesResolveRejectsNameSearch(t *testing.T) {
 	}
 }
 
+// downloadServer serves one document plus its metadata record.
+func downloadServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/documents/transcripts/abc":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"id":"abc","fileUrl":"` + srv.URL + `/file/transcript.json"}}`))
+		case "/file/transcript.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	return srv
+}
+
+func TestDownloadToStdout(t *testing.T) {
+	const body = `{"transcript":"hello"}`
+	srv := downloadServer(t, body)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"transcripts", "download", "abc", "--output", "-"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	// stdout is the document, byte for byte — a redirect must capture this
+	// and nothing else.
+	if out.String() != body {
+		t.Fatalf("expected the document on stdout, got %q", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("expected nothing on stderr, got %q", errOut.String())
+	}
+	// And no stray file is left behind next to the redirect target.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no files written, got %v", entries)
+	}
+}
+
+func TestDownloadStatusLineGoesToStderr(t *testing.T) {
+	srv := downloadServer(t, `{"ok":true}`)
+	defer srv.Close()
+
+	t.Chdir(t.TempDir())
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"transcripts", "download", "abc"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if out.Len() != 0 {
+		t.Fatalf("expected clean stdout, got %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "Saved transcripts-abc.json") {
+		t.Fatalf("expected the saved path on stderr, got %q", errOut.String())
+	}
+	if _, err := os.Stat("transcripts-abc.json"); err != nil {
+		t.Fatalf("expected the default file to exist: %v", err)
+	}
+}
+
 func TestListAllFollowsPagination(t *testing.T) {
 	requests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

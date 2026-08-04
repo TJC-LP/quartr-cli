@@ -294,6 +294,15 @@ quartr reports download 12345 --output annual-report.pdf
 quartr slides download 12345 --url-field fileUrl
 ```
 
+A download always writes a file unless you ask for stdout. `--output -` streams the document itself:
+
+```bash
+quartr transcripts download 432907 --output - > transcript.json
+quartr transcripts download 432907 --output - | jq '.transcript.text'
+```
+
+Without `--output`, the file is named after the resource and id (`transcripts-432907.json`) in the current directory. The `Saved <path>` confirmation goes to **stderr**, so a plain `> file` redirect never captures it.
+
 By default, the CLI does not include `x-api-key` when fetching a returned file URL. Add `--with-api-key` if your URL requires it:
 
 ```bash

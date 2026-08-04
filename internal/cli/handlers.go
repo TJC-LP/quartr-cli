@@ -303,7 +303,7 @@ func (a *app) downloadResource(r resource, args []string) error {
 		return fmt.Errorf("%s does not have a configured download URL field", r.name)
 	}
 	fs := newFlagSet(r.name+" download", a.errOut)
-	outPath := fs.String("output", "", "output file path; defaults to a name based on id and URL")
+	outPath := fs.String("output", "", "output file path, or - to stream to stdout; defaults to a name based on id and URL")
 	urlField := fs.String("url-field", r.downloadField, "metadata URL field to download")
 	withAPIKey := fs.Bool("with-api-key", false, "include x-api-key when fetching the file URL")
 	expand := fs.String("expand", "", "fields to expand on the metadata request")
@@ -330,27 +330,43 @@ func (a *app) downloadResource(r resource, args []string) error {
 		return err
 	}
 
+	apiKey := ""
+	if *withAPIKey {
+		apiKey = a.cfg.APIKey()
+	}
+
+	// `--output -` streams the document itself to stdout so it can be piped
+	// or redirected. Everything else this command prints goes to stderr, so
+	// `quartr transcripts download <id> --output - > f.json` writes the
+	// document and nothing else.
+	if *outPath == "-" {
+		_, err := a.client.Download(context.Background(), downloadURL, apiKey, a.out)
+		return err
+	}
+
 	dest := *outPath
 	if dest == "" {
 		dest = defaultFileName(r.name, id, downloadURL)
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil && filepath.Dir(dest) != "." {
-		return err
+	if dir := filepath.Dir(dest); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
 	}
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	apiKey := ""
-	if *withAPIKey {
-		apiKey = a.cfg.APIKey()
-	}
 	if _, err := a.client.Download(context.Background(), downloadURL, apiKey, f); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "Saved %s\n", dest)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", dest, err)
+	}
+	// stderr, not stdout: a redirect is supposed to capture the document.
+	fmt.Fprintf(a.errOut, "Saved %s\n", dest)
 	return nil
 }
 

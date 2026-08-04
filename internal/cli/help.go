@@ -113,6 +113,14 @@ Common list flags:
 				strings.ReplaceAll(sortRecipe(r), "\n", "\n  "))
 		}
 	}
+	if r.downloadField != "" {
+		fmt.Fprintf(a.out, `
+Downloads:
+  download <id>               writes ./%s-<id>.<ext> and reports the path on stderr
+  download <id> --output P    writes P
+  download <id> --output -    streams the document to stdout, nothing else
+`, r.name)
+	}
 	fmt.Fprint(a.out, `
 Examples:
 `)
@@ -122,7 +130,7 @@ Examples:
 	case "events":
 		fmt.Fprint(a.out, "  quartr events list --tickers AAPL --sort-by date --direction desc\n  quartr events summary 128301 --length long --plain\n")
 	case "transcripts":
-		fmt.Fprint(a.out, "  quartr transcripts list --tickers AAPL --expand event\n  quartr transcripts download 432907 --output transcript.json\n")
+		fmt.Fprint(a.out, "  quartr transcripts list --tickers AAPL --expand event\n  quartr transcripts download 432907 --output transcript.json\n  quartr transcripts download 432907 --output - | jq .\n")
 	case "live-transcripts":
 		fmt.Fprint(a.out, "  quartr live transcripts list --states live,willBeLive\n  quartr live transcripts stream 127537 --transcript-version 1.7\n")
 	default:
