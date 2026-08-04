@@ -68,6 +68,9 @@ func (a *app) printResourceHelp(r resource) {
 	if r.getPath != "" {
 		ops = append(ops, "get <id>")
 	}
+	if r.name == "companies" {
+		ops = append(ops, "resolve <ticker|cik>")
+	}
 	if r.summaryPath != "" {
 		ops = append(ops, "summary <id>")
 	}
@@ -90,7 +93,9 @@ func (a *app) printResourceHelp(r resource) {
 	}
 	fmt.Fprint(a.out, `
 Common list flags:
-  --tickers AAPL,MSFT      filter by tickers where supported
+  --tickers AAPL,MSFT      filter by tickers where supported; a bare ticker
+                           matches on every exchange, so qualify it as
+                           NYSE:BLD when the symbol is shared
   --company-ids 4742       filter by Quartr company IDs where supported
   --start-date ISO         content/event date lower bound where supported
   --end-date ISO           content/event date upper bound where supported
@@ -113,7 +118,7 @@ Examples:
 `)
 	switch r.name {
 	case "companies":
-		fmt.Fprint(a.out, "  quartr companies list --tickers AAPL\n  quartr companies get 4742 --format json\n")
+		fmt.Fprint(a.out, "  quartr companies list --tickers AAPL\n  quartr companies resolve BLD          # every company using that ticker\n  quartr companies get 4742 --format json\n")
 	case "events":
 		fmt.Fprint(a.out, "  quartr events list --tickers AAPL --sort-by date --direction desc\n  quartr events summary 128301 --length long --plain\n")
 	case "transcripts":

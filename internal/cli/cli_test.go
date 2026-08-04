@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -258,6 +259,128 @@ func TestExpandCompanyFailureIsNonFatal(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "warning: --expand company") {
 		t.Fatalf("expected a warning on stderr, got %s", errOut.String())
+	}
+}
+
+// twoBLDCompanies serves the TopBuild / Boral ticker collision from #5.
+func twoBLDCompanies() string {
+	return `{"data":[
+		{"id":11909,"name":"TopBuild Corp","country":"US","tickers":[{"exchange":"NYSE","ticker":"BLD"}]},
+		{"id":14573,"name":"Boral Limited","country":"AU","tickers":[{"exchange":"ASX","ticker":"BLD"}]}
+	],"pagination":{"nextCursor":null}}`
+}
+
+func TestQualifiedTickerResolvesToCompanyIDs(t *testing.T) {
+	var eventQuery url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/companies":
+			if got := r.URL.Query().Get("tickers"); got != "BLD" {
+				t.Errorf("expected bare ticker BLD on the wire, got %q", got)
+			}
+			_, _ = w.Write([]byte(twoBLDCompanies()))
+		case "/events":
+			eventQuery = r.URL.Query()
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"title":"Q4 2025","companyId":11909}],"pagination":{"nextCursor":null}}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL, "--format", "json",
+		"events", "list", "--tickers", "NYSE:BLD"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	// Resolving to an id beats filtering the page: rows belonging to the
+	// other company never consume the caller's --limit.
+	if got := eventQuery.Get("companyIds"); got != "11909" {
+		t.Fatalf("expected companyIds=11909, got %q", got)
+	}
+	if got := eventQuery.Get("tickers"); got != "" {
+		t.Fatalf("expected tickers to be replaced, got %q", got)
+	}
+}
+
+func TestUnqualifiedTickerIsNotResolved(t *testing.T) {
+	var tickers string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/events" {
+			t.Errorf("expected no company lookup, got %s", r.URL.Path)
+		}
+		tickers = r.URL.Query().Get("tickers")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"nextCursor":null}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"events", "list", "--tickers", "AAPL,aapl,MSFT,AAPL"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if tickers != "AAPL,MSFT" {
+		t.Fatalf("expected case-duplicates collapsed to AAPL,MSFT, got %q", tickers)
+	}
+}
+
+func TestQualifiedTickerWithNoMatchIsAUsageError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/companies" {
+			t.Errorf("expected no list request, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(twoBLDCompanies()))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"events", "list", "--tickers", "NASDAQ:BLD"}, &out, &errOut)
+	if code != 2 {
+		t.Fatalf("expected usage exit code 2, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "companies resolve BLD") {
+		t.Fatalf("expected a pointer to `companies resolve`, got %s", errOut.String())
+	}
+}
+
+func TestCompaniesResolveListsEveryCandidate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/companies" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(twoBLDCompanies()))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"companies", "resolve", "BLD"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	for _, want := range []string{"TopBuild Corp", "NYSE:BLD", "Boral Limited", "ASX:BLD"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("expected %q in resolve output, got %s", want, out.String())
+		}
+	}
+}
+
+func TestCompaniesResolveRejectsNameSearch(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", "http://127.0.0.1:0",
+		"companies", "resolve", "Apple Inc"}, &out, &errOut)
+	if code != 2 {
+		t.Fatalf("expected usage exit code 2, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "no company name search") {
+		t.Fatalf("expected an explanation of the missing capability, got %s", errOut.String())
 	}
 }
 

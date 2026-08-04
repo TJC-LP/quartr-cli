@@ -106,6 +106,12 @@ List companies by ticker:
 quartr companies list --tickers AAPL
 ```
 
+Find every company sharing a ticker:
+
+```bash
+quartr companies resolve BLD
+```
+
 List recent Apple events:
 
 ```bash
@@ -205,6 +211,42 @@ Endpoint-specific filters are also available where relevant:
 ```
 
 Companies are the one common exception where Quartr uses `ids` instead of `companyIds`. This CLI maps `--company-ids` to `ids` for `companies list`.
+
+## Tickers and exchange collisions
+
+Quartr matches a ticker string across every exchange it knows, so a US symbol quietly pulls in foreign namesakes:
+
+```bash
+quartr companies resolve CE
+```
+
+```text
+id     name                     country  matchedTickers
+5977   Celanese Corporation     US       NYSE:CE
+16679  Credito Emiliano S.p.A.  IT       BIT:CE
+16930  Cortus Energy            SE       OM:CE
+```
+
+`companies resolve` accepts a ticker, an exchange-qualified ticker, or a CIK, and prints every candidate with the exchange pairs that matched. Use it whenever a symbol might be shared. (CIKs deserve the same caution — `companies resolve 0001061630` returns Blackstone Mortgage Trust, which is rarely what the caller expected.)
+
+Once you know the exchange, qualify the ticker and the CLI does the disambiguation for you:
+
+```bash
+quartr events list --tickers NYSE:BLD --limit 4
+```
+
+`EXCHANGE:TICKER` is resolved to a `companyId` before the real request goes out:
+
+```text
+GET /companies?limit=500&tickers=BLD      # resolve
+GET /events?companyIds=11909&limit=4      # then query
+```
+
+Resolving up front rather than filtering the response matters: rows belonging to the other company would otherwise still count against `--limit`, so the company you asked for can be pushed off the page entirely.
+
+Qualifiers are per entry, so `--tickers AAPL,NYSE:BLD` works; once any entry is qualified, all of them are resolved to ids. Duplicate tickers are collapsed case-insensitively.
+
+The Quartr API has no company name search — there is no `search`, `query`, or `name` parameter on `/companies` — so `resolve` takes tickers and CIKs only.
 
 ## Expanding companies
 

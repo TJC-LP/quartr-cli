@@ -104,7 +104,7 @@ func addListFlags(fs *flag.FlagSet, lf *listFlags) {
 	fs.StringVar(&lf.fields, "fields", "", "comma-separated output fields")
 	fs.StringVar(&lf.countries, "countries", "", "comma-separated ISO country codes")
 	fs.StringVar(&lf.exchanges, "exchanges", "", "comma-separated exchange symbols")
-	fs.StringVar(&lf.tickers, "tickers", "", "comma-separated tickers, e.g. AAPL,MSFT")
+	fs.StringVar(&lf.tickers, "tickers", "", "comma-separated tickers; qualify with an exchange to avoid collisions, e.g. AAPL,NYSE:BLD")
 	fs.StringVar(&lf.isins, "isins", "", "comma-separated ISINs")
 	fs.StringVar(&lf.ciks, "ciks", "", "comma-separated SEC CIKs")
 	fs.StringVar(&lf.companyIDs, "company-ids", "", "comma-separated Quartr company IDs")
@@ -123,15 +123,27 @@ func addListFlags(fs *flag.FlagSet, lf *listFlags) {
 	fs.StringVar(&lf.levels, "levels", "", "comma-separated chapter levels")
 }
 
+// listValuedParams are the query parameters Quartr reads as comma-separated
+// lists, and so the ones worth deduplicating. Scalars are left alone —
+// a cursor is an opaque token that may legitimately contain a comma.
+var listValuedParams = params(
+	"countries", "exchanges", "tickers", "isins", "ciks", "companyIds", "ids",
+	"typeIds", "eventIds", "documentGroupIds", "states", "levels", "expand",
+)
+
 func (lf listFlags) toParams(allowed paramSet, companyEndpoint bool) url.Values {
 	p := url.Values{}
 	add := func(apiName, val string) {
 		if strings.TrimSpace(val) == "" {
 			return
 		}
-		if allowed.allows(apiName) {
-			p.Set(apiName, val)
+		if !allowed.allows(apiName) {
+			return
 		}
+		if listValuedParams.allows(apiName) {
+			val = dedupeCSV(val)
+		}
+		p.Set(apiName, val)
 	}
 	if lf.limit > 0 && allowed.allows("limit") {
 		p.Set("limit", strconv.Itoa(lf.limit))
@@ -144,10 +156,9 @@ func (lf listFlags) toParams(allowed paramSet, companyEndpoint bool) url.Values 
 	add("isins", lf.isins)
 	add("ciks", lf.ciks)
 	if companyEndpoint {
-		if lf.companyIDs != "" {
-			add("ids", lf.companyIDs)
-		}
-		add("ids", lf.ids)
+		// Both flags feed the same parameter here, so merge them; setting
+		// them one after the other would silently drop --company-ids.
+		add("ids", strings.Join(append(parseCSV(lf.companyIDs), parseCSV(lf.ids)...), ","))
 	} else {
 		add("companyIds", lf.companyIDs)
 	}

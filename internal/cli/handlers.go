@@ -95,6 +95,8 @@ func (a *app) handleResource(r resource, args []string) error {
 		return a.listResource(r, rest)
 	case "get", "show":
 		return a.getResource(r, rest)
+	case "resolve":
+		return a.resolveResource(r, rest)
 	case "summary", "summarize":
 		return a.summaryResource(r, rest)
 	case "pages":
@@ -132,6 +134,9 @@ func (a *app) listResource(r resource, args []string) error {
 		if err := checkCompanyExpand(r); err != nil {
 			return err
 		}
+	}
+	if err := a.applyQualifiedTickers(context.Background(), r, &lf); err != nil {
+		return err
 	}
 	if lf.all && !flagWasPassed(args, "limit") {
 		lf.limit = 500
@@ -185,6 +190,52 @@ func (a *app) getResource(r resource, args []string) error {
 		a.joinCompanies(ctx, joinableRows(obj))
 	}
 	return output.Write(a.out, obj, output.Options{Format: a.cfg.Format(), Fields: parseCSV(*fields)})
+}
+
+// resolveResource implements `quartr companies resolve <ticker|cik>`: the one
+// step that turns an ambiguous ticker into a companyId you can trust. Quartr
+// matches tickers across every exchange, so this prints every candidate with
+// the exchange pairs that matched rather than guessing which one was meant.
+func (a *app) resolveResource(r resource, args []string) error {
+	if r.name != "companies" {
+		return usagef("`resolve` is only available on `quartr companies`")
+	}
+	fs := newFlagSet("companies resolve", a.errOut)
+	fields := fs.String("fields", "", "comma-separated output fields")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return usagef("usage: quartr companies resolve <ticker|cik>   (e.g. BLD, NYSE:BLD, 0001739445)")
+	}
+
+	query := strings.TrimSpace(fs.Arg(0))
+	if query == "" || strings.ContainsAny(query, " \t") {
+		return usagef("the Quartr API has no company name search; pass a ticker (BLD or NYSE:BLD) or a CIK")
+	}
+
+	ctx := context.Background()
+	var companies []map[string]any
+	var err error
+	if looksLikeCIK(query) {
+		companies, err = a.lookupCompanies(ctx, "ciks", query, nil)
+	} else {
+		specs := parseTickerSpecs(query)
+		companies, err = a.lookupCompanies(ctx, "tickers", bareTickerCSV(specs), specs)
+	}
+	if err != nil {
+		return err
+	}
+	if len(companies) == 0 {
+		return fmt.Errorf("no company matches %q", query)
+	}
+
+	chosen := parseCSV(*fields)
+	if len(chosen) == 0 {
+		chosen = []string{"id", "name", "country", "matchedTickers"}
+	}
+	result := map[string]any{"data": companies, "count": len(companies)}
+	return output.Write(a.out, result, output.Options{Format: a.cfg.Format(), Fields: chosen})
 }
 
 func (a *app) summaryResource(r resource, args []string) error {
