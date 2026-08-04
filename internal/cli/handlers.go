@@ -126,13 +126,24 @@ func (a *app) listResource(r resource, args []string) error {
 	if err := validateSortBy(r, lf.sortBy); err != nil {
 		return err
 	}
+	var joinCompany bool
+	lf.expand, joinCompany = splitExpand(lf.expand)
+	if joinCompany {
+		if err := checkCompanyExpand(r); err != nil {
+			return err
+		}
+	}
 	if lf.all && !flagWasPassed(args, "limit") {
 		lf.limit = 500
 	}
 
-	params := lf.toParams(r.listParams, r.name == "companies")
-	fields := parseCSV(lf.fields)
-	return a.fetchList(r.listPath, params, lf.all, fields)
+	return a.fetchList(listRequest{
+		path:        r.listPath,
+		params:      lf.toParams(r.listParams, r.name == "companies"),
+		all:         lf.all,
+		fields:      parseCSV(lf.fields),
+		joinCompany: joinCompany,
+	})
 }
 
 func (a *app) getResource(r resource, args []string) error {
@@ -141,7 +152,7 @@ func (a *app) getResource(r resource, args []string) error {
 	}
 	fs := newFlagSet(r.name+" get", a.errOut)
 	fields := fs.String("fields", "", "comma-separated output fields")
-	expand := fs.String("expand", "", "fields to expand, e.g. event")
+	expand := fs.String("expand", "", "fields to expand: event (API) or company (joined client-side)")
 	transcriptVersion := fs.String("transcript-version", "", "live transcript version")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
@@ -149,19 +160,29 @@ func (a *app) getResource(r resource, args []string) error {
 	if fs.NArg() != 1 {
 		return fmt.Errorf("usage: quartr %s get <id>", r.name)
 	}
+	apiExpand, joinCompany := splitExpand(*expand)
+	if joinCompany {
+		if err := checkCompanyExpand(r); err != nil {
+			return err
+		}
+	}
 
 	params := url.Values{}
-	if r.getParams.allows("expand") && *expand != "" {
-		params.Set("expand", *expand)
+	if r.getParams.allows("expand") && apiExpand != "" {
+		params.Set("expand", apiExpand)
 	}
 	if r.getParams.allows("transcriptVersion") && *transcriptVersion != "" {
 		params.Set("transcriptVersion", *transcriptVersion)
 	}
 
+	ctx := context.Background()
 	path := strings.ReplaceAll(r.getPath, "{id}", url.PathEscape(fs.Arg(0)))
-	obj, _, err := a.client.GetJSON(context.Background(), path, params)
+	obj, _, err := a.client.GetJSON(ctx, path, params)
 	if err != nil {
 		return err
+	}
+	if joinCompany {
+		a.joinCompanies(ctx, joinableRows(obj))
 	}
 	return output.Write(a.out, obj, output.Options{Format: a.cfg.Format(), Fields: parseCSV(*fields)})
 }
@@ -218,9 +239,12 @@ func (a *app) childListResource(r resource, pathTpl string, allowed paramSet, ar
 		lf.limit = 500
 	}
 
-	params := lf.toParams(allowed, false)
-	path := strings.ReplaceAll(pathTpl, "{id}", url.PathEscape(fs.Arg(0)))
-	return a.fetchList(path, params, lf.all, parseCSV(lf.fields))
+	return a.fetchList(listRequest{
+		path:   strings.ReplaceAll(pathTpl, "{id}", url.PathEscape(fs.Arg(0))),
+		params: lf.toParams(allowed, false),
+		all:    lf.all,
+		fields: parseCSV(lf.fields),
+	})
 }
 
 func (a *app) downloadResource(r resource, args []string) error {
@@ -347,7 +371,7 @@ func (a *app) handleRequest(args []string) error {
 		params.Add(k, v)
 	}
 	if *paginate {
-		return a.fetchList(fs.Arg(0), params, true, parseCSV(*fields))
+		return a.fetchList(listRequest{path: fs.Arg(0), params: params, all: true, fields: parseCSV(*fields)})
 	}
 
 	obj, _, err := a.client.GetJSON(context.Background(), fs.Arg(0), params)

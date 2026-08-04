@@ -116,7 +116,7 @@ func addListFlags(fs *flag.FlagSet, lf *listFlags) {
 	fs.StringVar(&lf.typeIDs, "type-ids", "", "comma-separated type IDs")
 	fs.StringVar(&lf.eventIDs, "event-ids", "", "comma-separated event IDs")
 	fs.StringVar(&lf.documentGroupIDs, "document-group-ids", "", "comma-separated document group IDs")
-	fs.StringVar(&lf.expand, "expand", "", "comma-separated fields to expand, e.g. event")
+	fs.StringVar(&lf.expand, "expand", "", "comma-separated fields to expand: event (API) or company (joined client-side)")
 	fs.StringVar(&lf.states, "states", "", "comma-separated live states")
 	fs.StringVar(&lf.transcriptVersion, "transcript-version", "", "live transcript stream version, e.g. 1.7")
 	fs.StringVar(&lf.sortBy, "sort-by", "", "sort field; only `events list` supports it (id, date)")

@@ -140,6 +140,127 @@ func TestSortByRejectedOnChildList(t *testing.T) {
 	}
 }
 
+func TestExpandCompanyJoinsNamesClientSide(t *testing.T) {
+	var eventQueries, companyQueries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/events":
+			eventQueries = append(eventQueries, r.URL.RawQuery)
+			_, _ = w.Write([]byte(`{"data":[
+				{"id":1,"title":"Q4 2025","companyId":3694},
+				{"id":2,"title":"Q1 2026","companyId":12301},
+				{"id":3,"title":"Q2 2026","companyId":3694}
+			],"pagination":{"nextCursor":null}}`))
+		case "/companies":
+			companyQueries = append(companyQueries, r.URL.Query().Get("ids"))
+			_, _ = w.Write([]byte(`{"data":[
+				{"id":3694,"name":"Arcosa Inc","country":"US"},
+				{"id":12301,"name":"Crédit Agricole S.A.","country":"FR"}
+			],"pagination":{"nextCursor":null}}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL, "--format", "json",
+		"events", "list", "--tickers", "ACA", "--expand", "company"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	for _, want := range []string{"Arcosa Inc", "Crédit Agricole S.A."} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("expected joined company %q in output, got %s", want, out.String())
+		}
+	}
+	// expand=company must not reach the API: /events 400s on the parameter.
+	if len(eventQueries) != 1 || strings.Contains(eventQueries[0], "expand") {
+		t.Fatalf("expected one events request without expand, got %#v", eventQueries)
+	}
+	// Two rows share a companyId, so the join asks for two distinct ids once.
+	if len(companyQueries) != 1 {
+		t.Fatalf("expected exactly 1 companies request, got %#v", companyQueries)
+	}
+	if companyQueries[0] != "3694,12301" {
+		t.Fatalf("expected deduped ids 3694,12301, got %q", companyQueries[0])
+	}
+}
+
+func TestExpandCompanyKeepsEventExpansionOnTheWire(t *testing.T) {
+	var gotExpand string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/documents/transcripts":
+			gotExpand = r.URL.Query().Get("expand")
+			_, _ = w.Write([]byte(`{"data":[{"id":9,"companyId":4742,"event":{"title":"Q3 2026"}}],"pagination":{"nextCursor":null}}`))
+		case "/companies":
+			_, _ = w.Write([]byte(`{"data":[{"id":4742,"name":"Apple Inc"}],"pagination":{"nextCursor":null}}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL, "--format", "json",
+		"transcripts", "list", "--expand", "event,company"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if gotExpand != "event" {
+		t.Fatalf("expected expand=event forwarded without company, got %q", gotExpand)
+	}
+	if !strings.Contains(out.String(), "Apple Inc") {
+		t.Fatalf("expected joined company name, got %s", out.String())
+	}
+}
+
+func TestExpandCompanyRejectedWhereRowsHaveNoCompany(t *testing.T) {
+	for _, tc := range []struct{ cmd, want string }{
+		{"companies", "redundant"},
+		{"document-types", "no companyId"},
+	} {
+		var out, errOut bytes.Buffer
+		code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", "http://127.0.0.1:0",
+			tc.cmd, "list", "--expand", "company"}, &out, &errOut)
+		if code != 2 {
+			t.Fatalf("%s: expected usage exit code 2, got %d; stderr=%s", tc.cmd, code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), tc.want) {
+			t.Fatalf("%s: expected stderr to mention %q, got %s", tc.cmd, tc.want, errOut.String())
+		}
+	}
+}
+
+func TestExpandCompanyFailureIsNonFatal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/companies" {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"Forbidden","statusCode":403}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":1,"title":"Q4 2025","companyId":3694}],"pagination":{"nextCursor":null}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL, "--format", "json",
+		"events", "list", "--expand", "company"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected the rows to survive a failed join, got code %d", code)
+	}
+	if !strings.Contains(out.String(), "Q4 2025") {
+		t.Fatalf("expected event rows in stdout, got %s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "warning: --expand company") {
+		t.Fatalf("expected a warning on stderr, got %s", errOut.String())
+	}
+}
+
 func TestListAllFollowsPagination(t *testing.T) {
 	requests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

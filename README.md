@@ -206,6 +206,25 @@ Endpoint-specific filters are also available where relevant:
 
 Companies are the one common exception where Quartr uses `ids` instead of `companyIds`. This CLI maps `--company-ids` to `ids` for `companies list`.
 
+## Expanding companies
+
+Quartr has no server-side company expansion — `/events` rejects `expand` outright and the document endpoints accept only `expand=event`. Pass `--expand company` anyway and the CLI performs the join itself, batching the distinct `companyId` values into `/companies` calls of up to 100 ids:
+
+```bash
+quartr events list --tickers ACA --limit 6 --expand company \
+  --fields id,date,title,companyId,company.name,company.country
+```
+
+```text
+id     date                      title              companyId  company.name          company.country
+243    2021-08-05T00:00:00.000Z  Q2 2021            3694       Arcosa Inc            US
+22156  2022-05-05T16:50:34.000Z  Q1 2022            12301      Crédit Agricole S.A.  FR
+```
+
+`company.name` and `company.country` are picked up automatically when `--fields` is omitted, which is usually how you notice that one ticker matched two companies on different exchanges.
+
+`--expand event,company` works: `event` goes to the API, `company` is joined locally. The join also applies to `get`, runs once across all pages under `--all`, and is skipped for rows that already carry a `company` object. If the `/companies` lookup fails, the rows are still printed and a warning goes to stderr.
+
 ## Sorting
 
 `--sort-by` is only implemented by `/events`, where the accepted fields are `id` and `date`. Every other list endpoint rejects the parameter outright, so the CLI now fails with exit code 2 instead of dropping the flag:

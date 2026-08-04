@@ -208,7 +208,8 @@ func chooseFields(rows []map[string]any, explicit []string) []string {
 	}
 	preferred := []string{
 		"id", "name", "displayName", "title", "parent", "category", "form",
-		"companyId", "eventId", "typeId", "documentGroupId", "fiscalYear", "fiscalPeriod",
+		"companyId", "company.name", "company.country",
+		"eventId", "typeId", "documentGroupId", "fiscalYear", "fiscalPeriod",
 		"date", "state", "wentLiveAt", "qna", "startTimestamp", "endTimestamp", "level",
 		"fileUrl", "streamUrl", "audio", "transcript", "pdfUrl", "imageUrl", "backlinkUrl",
 		"country", "tickers", "isins", "cik",
