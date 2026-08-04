@@ -206,6 +206,24 @@ Endpoint-specific filters are also available where relevant:
 
 Companies are the one common exception where Quartr uses `ids` instead of `companyIds`. This CLI maps `--company-ids` to `ids` for `companies list`.
 
+## Sorting
+
+`--sort-by` is only implemented by `/events`, where the accepted fields are `id` and `date`. Every other list endpoint rejects the parameter outright, so the CLI now fails with exit code 2 instead of dropping the flag:
+
+```bash
+quartr transcripts list --tickers AAPL --sort-by date
+# --sort-by is not supported by `quartr transcripts list` ... (exit 2)
+```
+
+This matters because the failure used to be invisible: document endpoints return rows in insertion order, so the newest filings and calls are simply absent from the first page. Sort events first, then fetch documents by event id:
+
+```bash
+quartr events list --tickers AAPL --sort-by date --direction desc --limit 5
+quartr transcripts list --event-ids 406161
+```
+
+`--direction asc|desc` is accepted by every list endpoint, but it reverses insertion order, not date order.
+
 ## Downloads
 
 Download commands first retrieve metadata, then download the URL field from the response.

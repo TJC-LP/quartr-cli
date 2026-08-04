@@ -67,6 +67,10 @@ func Run(args []string, out, errOut io.Writer) int {
 			return 0
 		}
 		fmt.Fprintln(errOut, err)
+		var usage *usageError
+		if errors.As(err, &usage) {
+			return 2
+		}
 		return 1
 	}
 	return 0

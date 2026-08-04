@@ -123,6 +123,9 @@ func (a *app) listResource(r resource, args []string) error {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
+	if err := validateSortBy(r, lf.sortBy); err != nil {
+		return err
+	}
 	if lf.all && !flagWasPassed(args, "limit") {
 		lf.limit = 500
 	}
@@ -206,6 +209,10 @@ func (a *app) childListResource(r resource, pathTpl string, allowed paramSet, ar
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("usage: quartr %s %s <id>", r.name, child)
+	}
+	if strings.TrimSpace(lf.sortBy) != "" {
+		return usagef("--sort-by is not supported by `quartr %s %s`; rows are returned in document order",
+			r.name, child)
 	}
 	if lf.all && !flagWasPassed(args, "limit") {
 		lf.limit = 500

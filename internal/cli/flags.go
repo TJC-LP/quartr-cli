@@ -119,7 +119,7 @@ func addListFlags(fs *flag.FlagSet, lf *listFlags) {
 	fs.StringVar(&lf.expand, "expand", "", "comma-separated fields to expand, e.g. event")
 	fs.StringVar(&lf.states, "states", "", "comma-separated live states")
 	fs.StringVar(&lf.transcriptVersion, "transcript-version", "", "live transcript stream version, e.g. 1.7")
-	fs.StringVar(&lf.sortBy, "sort-by", "", "sort field for endpoints that support it")
+	fs.StringVar(&lf.sortBy, "sort-by", "", "sort field; only `events list` supports it (id, date)")
 	fs.StringVar(&lf.levels, "levels", "", "comma-separated chapter levels")
 }
 

@@ -71,6 +71,75 @@ func TestDownloadAllowsFlagsAfterID(t *testing.T) {
 	}
 }
 
+func TestSortByRejectedOnUnsortableResource(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		t.Fatalf("expected no request, got %s", r.URL)
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"transcripts", "list", "--tickers", "AAPL", "--sort-by", "date"}, &out, &errOut)
+	if code != 2 {
+		t.Fatalf("expected usage exit code 2, got %d; stderr=%s", code, errOut.String())
+	}
+	for _, want := range []string{"--sort-by is not supported", "quartr events list", "--event-ids"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("expected stderr to mention %q, got %s", want, errOut.String())
+		}
+	}
+}
+
+func TestSortByRejectsUnknownFieldOnEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		t.Fatalf("expected no request, got %s", r.URL)
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"events", "list", "--sort-by", "title"}, &out, &errOut)
+	if code != 2 {
+		t.Fatalf("expected usage exit code 2, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "supported sort fields: id, date") {
+		t.Fatalf("expected supported field list, got %s", errOut.String())
+	}
+}
+
+func TestSortByForwardedOnEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("sortBy"); got != "date" {
+			t.Fatalf("expected sortBy=date, got %q", got)
+		}
+		if got := r.URL.Query().Get("direction"); got != "desc" {
+			t.Fatalf("expected direction=desc, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":1,"title":"Q4 2025"}],"pagination":{"nextCursor":null}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"events", "list", "--sort-by", "date", "--direction", "desc"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+}
+
+func TestSortByRejectedOnChildList(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", "http://127.0.0.1:0",
+		"reports", "pages", "123", "--sort-by", "date"}, &out, &errOut)
+	if code != 2 {
+		t.Fatalf("expected usage exit code 2, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "quartr reports pages") {
+		t.Fatalf("expected command name in message, got %s", errOut.String())
+	}
+}
+
 func TestListAllFollowsPagination(t *testing.T) {
 	requests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

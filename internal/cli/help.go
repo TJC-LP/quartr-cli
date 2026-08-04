@@ -98,7 +98,17 @@ Common list flags:
   --limit N                page size, max 500
   --all                    follow pagination.nextCursor
   --fields a,b,c           output fields for table/csv
-
+`)
+	if r.listPath != "" {
+		fmt.Fprintf(a.out, "\nSorting:\n")
+		if len(r.sortFields) > 0 {
+			fmt.Fprintf(a.out, "  --sort-by %s [--direction asc|desc]\n", strings.Join(r.sortFields, "|"))
+		} else {
+			fmt.Fprintf(a.out, "  --sort-by is rejected here (the endpoint has no sortBy parameter).\n  %s\n",
+				strings.ReplaceAll(sortRecipe(r), "\n", "\n  "))
+		}
+	}
+	fmt.Fprint(a.out, `
 Examples:
 `)
 	switch r.name {
