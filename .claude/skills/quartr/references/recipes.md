@@ -30,6 +30,33 @@ For multiple tickers in one call:
 quartr companies list --tickers AAPL,MSFT,NVDA --fields id,name,country
 ```
 
+**Always check for a ticker collision first.** Quartr matches a ticker across
+every exchange, so common US symbols also return foreign namesakes:
+
+```bash
+quartr companies resolve CE
+# id     name                     country  matchedTickers
+# 5977   Celanese Corporation     US       NYSE:CE
+# 16679  Credito Emiliano S.p.A.  IT       BIT:CE
+# 16930  Cortus Energy            SE       OM:CE
+```
+
+`resolve` takes a ticker, an `EXCHANGE:TICKER` pair, or a CIK, and lists every
+candidate with the exchange pairs that matched. There is no name search — the
+API has no `search`/`query`/`name` parameter — so never try to look a company
+up by name.
+
+Once the exchange is known, qualify the ticker anywhere `--tickers` is
+accepted and the CLI resolves it to a companyId before querying:
+
+```bash
+quartr events list --tickers NYSE:BLD --limit 5
+```
+
+Known collisions seen in practice: `ACA` (Arcosa / Crédit Agricole), `BLD`
+(TopBuild / Boral), `CE` (Celanese / Credito Emiliano), `WM`, `COST`, `TEL`,
+`AVNT`.
+
 When parsing programmatically, prefer:
 
 ```bash
@@ -78,27 +105,22 @@ typeId, companyId, language, …}`.
 
 Three steps:
 
-```bash
-# 1. Get company ID (or use --tickers directly in step 2 if the API accepts it)
-COMPANY_ID=$(quartr companies list --tickers AAPL --format json \
-  | jq -r '.data[0].id')
+**`reports list` cannot sort.** `--sort-by` exists only on `events list`;
+everywhere else the CLI rejects it with exit 2, because the endpoint returns
+rows in insertion order and the newest filing is often not on the first page.
+Do not reach for `--sort-by` here, and do not trust the first page.
 
-# 2. Find the latest 10-K (document type id 11)
-quartr reports list --tickers AAPL --type-ids 11 \
-  --sort-by date --direction desc --limit 1 \
-  --fields id,fileUrl,eventId,createdAt
-```
-
-The `reports list` endpoint may not accept `--sort-by` (it's events-only); if
-so, list and pick the highest-`createdAt`:
+Pull a wide page and sort locally:
 
 ```bash
-quartr reports list --tickers AAPL --type-ids 11 --limit 5 --format json \
+quartr reports list --tickers AAPL --type-ids 11 --all --format json \
   | jq '.data | sort_by(.createdAt) | reverse | .[0]'
 ```
 
+`--all` matters: with a small `--limit` the newest report may simply be
+absent. Then download it:
+
 ```bash
-# 3. Download
 quartr reports download <id> --output apple-10k.pdf
 ```
 
@@ -137,6 +159,18 @@ quartr transcripts list --tickers AAPL --expand event --all --format json \
 `--all` follows `pagination.nextCursor` and auto-bumps `--limit` to 500.
 `--expand event` merges the parent event object into each transcript row.
 
+Add `company` to the expansion when the rows need to be attributable — rows
+otherwise carry a bare `companyId`, which is how a ticker collision goes
+unnoticed:
+
+```bash
+quartr transcripts list --tickers AAPL --expand event,company --all --format json
+```
+
+`event` is expanded by the API; `company` is joined client-side by the CLI
+(the API rejects `expand=company`), batching the distinct companyIds into
+`/companies` lookups. It works on `list` and `get`.
+
 Resulting shape:
 
 ```json
@@ -172,6 +206,17 @@ quartr transcripts list --tickers AAPL --all --format json \
       quartr transcripts download "$id" --output "transcripts/$id.json"
     done
 ```
+
+To pipe one document straight through without touching disk, use
+`--output -`; it streams the document to stdout and nothing else:
+
+```bash
+quartr transcripts download 432907 --output - | jq -r '.transcript.text'
+```
+
+Without `--output -` a download always writes a file (the `Saved <path>`
+confirmation goes to stderr), so `download <id> > f.json` produces an empty
+`f.json` and a file you did not name.
 
 ---
 
@@ -272,6 +317,10 @@ For event types (Q1/Q2/Q3/Q4 earnings calls, AGM, Investor Day):
 quartr event-types list --format csv
 ```
 
+Both lookup commands return the **whole** catalog (46 document types, 34 event
+types) rather than one page, so a `grep` over them is trustworthy. Pass an
+explicit `--limit` only if paging is wanted.
+
 ---
 
 ## 10. Empty results vs errors — how to tell the user
@@ -279,10 +328,16 @@ quartr event-types list --format csv
 | Output                                    | Meaning                                              | What to say |
 |-------------------------------------------|------------------------------------------------------|-------------|
 | `No rows`                                 | Valid API response with empty `data` array           | "No matches for those filters." |
-| `quartr api error: 403 Forbidden: …`      | API tier doesn't include this endpoint               | Quote the error; suggest narrowing scope or contacting Quartr to upgrade. |
+| `quartr api error: 403 Forbidden: …`      | API tier doesn't include this endpoint (the CLI prints a `hint:` line saying so) | Quote the error; it is entitlement, not auth — do not re-check the key. Suggest contacting Quartr to upgrade. |
+| `quartr api error: 401 Unauthorized: …`   | The key itself was rejected                          | Check `quartr auth show` and `QUARTR_API_KEY`. |
 | `quartr api error: 400 Bad Request: …`    | Bad parameter (e.g. unsupported `expand` value)      | Check the message body — it usually names the offending field. |
 | `quartr api error: 404 Not Found: …`      | ID doesn't exist                                     | Verify the ID via a list query first. |
 | `missing API key; set QUARTR_API_KEY …`   | No reachable credential                              | Ask user to set `QUARTR_API_KEY` or run `quartr auth login`. |
 
 Don't retry 403/400/404 — they're not transient. The CLI already handles
 429/5xx with backoff.
+
+**Exit codes:** `0` success, `1` request failed, `2` the command line itself
+was wrong (unsupported `--sort-by`, `--expand company` where rows have no
+company, an exchange-qualified ticker that matches nothing). A `2` will never
+be fixed by retrying — read the message, it names the alternative.

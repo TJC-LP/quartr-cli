@@ -8,7 +8,7 @@ specific flag or endpoint at hand.
 | Command            | Operations                                  | Base path                  | Notes                          |
 |--------------------|---------------------------------------------|----------------------------|--------------------------------|
 | `auth`             | `login`, `show`, `logout`                   | (local)                    | Manages `~/.config/quartr/config.json` |
-| `companies`        | `list`, `get`                               | `/companies`               | Uses `ids` API param, not `companyIds` |
+| `companies`        | `list`, `get`, `resolve`                    | `/companies`               | Uses `ids` API param, not `companyIds`; `resolve <ticker\|cik>` lists collision candidates |
 | `events`           | `list`, `get`, `summary`                    | `/events`                  | `summary` is tier-restricted   |
 | `documents`        | `list`, `get`, `download`                   | `/documents`               | Generic parent; prefer typed resources |
 | `reports`          | `list`, `get`, `summary`, `pages`, `download` | `/documents/reports`     | `fileUrl` is the download field |
@@ -18,8 +18,8 @@ specific flag or endpoint at hand.
 | `live`             | `list`, `get`                               | `/live`                    | Honors `transcriptVersion`     |
 | `live audio`       | `list`, `get`, `download`                   | `/live/audio`              | Download field is `audio`      |
 | `live transcripts` | `list`, `get`, `stream`                     | `/live/transcripts`        | `list` may be tier-restricted; stream field is `transcript` |
-| `event-types`      | `list`, `get`                               | `/event-types`             | Lookup table                   |
-| `document-types`   | `list`, `get`                               | `/document-types`          | Lookup table                   |
+| `event-types`      | `list`, `get`                               | `/event-types`             | Lookup table; `list` returns the whole catalog |
+| `document-types`   | `list`, `get`                               | `/document-types`          | Lookup table; `list` returns the whole catalog |
 | `request`          | `get`                                       | (any path)                 | Escape hatch; `--query k=v --paginate` |
 
 `live audio` and `live transcripts` accept either `quartr live audio …` or
@@ -50,7 +50,8 @@ Auth precedence: flags > env > config file > defaults.
 --all                      follow pagination.nextCursor (auto-bumps limit to 500 if not set)
 --fields a,b,c             output columns; supports dotted paths
 
---tickers AAPL,MSFT        comma-separated tickers
+--tickers AAPL,MSFT        comma-separated tickers; EXCHANGE:TICKER (NYSE:BLD) is
+                           resolved to a companyId first, deduped case-insensitively
 --company-ids 4742         maps to "ids" for companies, "companyIds" elsewhere
 --countries US,GB          ISO country codes
 --exchanges NYSE,NASDAQ    exchange symbols
@@ -61,18 +62,22 @@ Auth precedence: flags > env > config file > defaults.
 --end-date 2024-12-31      ISO 8601
 --updated-after 2024-01-01 incremental sync lower bound
 --updated-before 2024-12-31
---expand event             merge related objects into response
+--expand event,company     event is expanded by the API; company is joined client-side
 --type-ids 1,2,3           events / documents* / transcripts* / reports* / slides* / audio*
 --event-ids 128301         documents* / transcripts* / reports* / slides* / audio* / live*
 --document-group-ids foo   documents* / transcripts* / reports* / slides*
 --states live,willBeLive   live, live-transcripts, live-audio
 --transcript-version 1.7   live, live-transcripts, transcripts (get only), audio (get only)
---sort-by date             events list only
+--sort-by id|date          events list ONLY; rejected with exit 2 everywhere else
 --levels 1,2               chapters subcommand on reports/slides/transcripts/audio
 ```
 
 Filter flags that aren't allowed for a resource are silently dropped; the
 allowed set is enforced by `paramSet` in `internal/cli/resources.go`.
+
+Two exceptions are errors rather than silent drops, because silence produced
+wrong answers: `--sort-by` on anything but `events list`, and `--expand
+company` on rows that carry no companyId. Both exit 2.
 
 ## Per-operation flags beyond list
 
@@ -86,7 +91,8 @@ allowed set is enforced by `paramSet` in `internal/cli/resources.go`.
 | `<r> summary`    | `--fields`               | Output columns                                     |
 | `<r> pages`      | list flags               | reports, slides only                               |
 | `<r> chapters`   | list flags + `--levels`  | transcripts, audio only                            |
-| `<r> download`   | `--output PATH`          | Defaults to `<resource>-<id>.<ext>` in cwd         |
+| `<r> download`   | `--output PATH`          | Defaults to `<resource>-<id>.<ext>` in cwd; `-` streams to stdout |
+| `<r> download`   | (status line)            | `Saved <path>` goes to **stderr**, never stdout    |
 | `<r> download`   | `--url-field NAME`       | Defaults to `fileUrl` (or resource-specific)       |
 | `<r> download`   | `--with-api-key`         | Send `x-api-key` when fetching the file URL        |
 | `<r> download`   | `--expand`               | On the metadata request                            |
@@ -141,6 +147,16 @@ with `-`.
 - Up to 3 attempts with exponential backoff (250ms, 500ms)
 - Errors surface as `quartr api error: <status>: <body>` on final failure
 
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0    | Success |
+| 1    | The request failed (API error, network, missing key) |
+| 2    | The command line was wrong: unsupported `--sort-by`, `--expand company` on rows without a company, an exchange-qualified ticker matching nothing, a bad global flag |
+
+A `2` is never transient. The message names the supported alternative.
+
 ## Lookup tables (run these once, then reference in flags)
 
 ```bash
@@ -173,6 +189,10 @@ quartr document-types list --format csv
 # 27,Registration statement,S-1
 # …
 ```
+
+Both commands return the entire catalog (46 document types, 34 event types),
+not a first page, so grepping their output is safe. Pass an explicit `--limit`
+to page instead.
 
 When the user names a filing form (10-K, 8-K, etc.), look up the `id` first
 and pass it via `--type-ids`.
