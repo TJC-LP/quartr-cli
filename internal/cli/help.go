@@ -113,6 +113,14 @@ Common list flags:
 				strings.ReplaceAll(sortRecipe(r), "\n", "\n  "))
 		}
 	}
+	if r.fullCatalog {
+		fmt.Fprintf(a.out, `
+Catalog:
+  `+"`quartr %s list`"+` returns the whole table by default: it is a lookup
+  list, and the ids people need most sit past the first page. Pass --limit
+  to page through it instead.
+`, r.name)
+	}
 	if r.downloadField != "" {
 		fmt.Fprintf(a.out, `
 Downloads:

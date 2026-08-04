@@ -458,6 +458,100 @@ func TestDownloadStatusLineGoesToStderr(t *testing.T) {
 	}
 }
 
+func TestForbiddenIsExplainedAsTierNotAuth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Forbidden","statusCode":403}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"events", "summary", "406161"}, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d", code)
+	}
+	if !strings.Contains(errOut.String(), "not included in your API tier") {
+		t.Fatalf("expected a tier explanation, got %s", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "401") {
+		t.Fatalf("expected the 401 contrast that rules out a bad key, got %s", errOut.String())
+	}
+}
+
+func TestUnauthorizedPointsAtTheKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"Unauthorized","statusCode":401}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"companies", "list"}, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d", code)
+	}
+	if !strings.Contains(errOut.String(), "quartr auth show") {
+		t.Fatalf("expected the key-checking hint, got %s", errOut.String())
+	}
+}
+
+func TestLookupTablesReturnTheWholeCatalog(t *testing.T) {
+	pages := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("cursor") == "" {
+			if got := r.URL.Query().Get("limit"); got != "500" {
+				t.Errorf("expected the catalog to be fetched 500 at a time, got limit=%q", got)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":11,"name":"Annual report","form":"10-K"}],"pagination":{"nextCursor":"p2"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":25,"name":"Shareholder letter","form":""}],"pagination":{"nextCursor":null}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"document-types", "list"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if pages != 2 {
+		t.Fatalf("expected the catalog to be paged to exhaustion, got %d requests", pages)
+	}
+	// typeId 25 lives past the old default page of 10, which is why it read
+	// as undocumented.
+	if !strings.Contains(out.String(), "Shareholder letter") {
+		t.Fatalf("expected the tail of the catalog, got %s", out.String())
+	}
+}
+
+func TestExplicitLimitStillPagesTheCatalog(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if got := r.URL.Query().Get("limit"); got != "5" {
+			t.Errorf("expected limit=5 to be honored, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":11,"name":"Annual report"}],"pagination":{"nextCursor":"p2"}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"document-types", "list", "--limit", "5"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if requests != 1 {
+		t.Fatalf("expected an explicit --limit to opt out of the full catalog, got %d requests", requests)
+	}
+}
+
 func TestListAllFollowsPagination(t *testing.T) {
 	requests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

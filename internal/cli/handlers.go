@@ -138,6 +138,11 @@ func (a *app) listResource(r resource, args []string) error {
 	if err := a.applyQualifiedTickers(context.Background(), r, &lf); err != nil {
 		return err
 	}
+	// A lookup table is only useful whole: the type ids people need most
+	// (25 = shareholder letter, 46 = DEFM14A) live past the default page.
+	if r.fullCatalog && !flagWasPassed(args, "limit") && !flagWasPassed(args, "cursor") {
+		lf.all = true
+	}
 	if lf.all && !flagWasPassed(args, "limit") {
 		lf.limit = 500
 	}

@@ -51,6 +51,10 @@ type resource struct {
 	// means the endpoint has no sortBy parameter at all, which the CLI
 	// reports instead of dropping the flag on the floor.
 	sortFields paramSet
+	// fullCatalog marks a bounded lookup table that is only useful whole.
+	// Those endpoints page like any other, so the default limit of 10 turns
+	// a 46-row catalog into a 10-row one with nothing to say it was cut.
+	fullCatalog bool
 }
 
 var (
@@ -175,16 +179,18 @@ var resources = map[string]resource{
 		getParams:     getLiveParams,
 	},
 	"event-types": {
-		name:       "event-types",
-		listPath:   "/event-types",
-		getPath:    "/event-types/{id}",
-		listParams: simpleListParams,
+		name:        "event-types",
+		listPath:    "/event-types",
+		getPath:     "/event-types/{id}",
+		listParams:  simpleListParams,
+		fullCatalog: true,
 	},
 	"document-types": {
-		name:       "document-types",
-		listPath:   "/document-types",
-		getPath:    "/document-types/{id}",
-		listParams: simpleListParams,
+		name:        "document-types",
+		listPath:    "/document-types",
+		getPath:     "/document-types/{id}",
+		listParams:  simpleListParams,
+		fullCatalog: true,
 	},
 }
 
