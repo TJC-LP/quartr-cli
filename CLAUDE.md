@@ -5,12 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-make build        # build ./bin/quartr
+make build        # build ./bin/quartr, version baked in via -ldflags
 make test         # go test ./...
 make install      # go install ./cmd/quartr; if QUARTR_API_KEY is in env,
                   # also runs `quartr auth login` to persist the key
                   # to ~/.config/quartr/config.json (mode 0600)
-make clean        # remove ./bin
+make dist         # cross-compile release archives + checksums into ./dist
+make clean        # remove ./bin and ./dist
 
 go test ./internal/cli -run TestBuildConfigPrecedence   # run a single test
 
@@ -55,9 +56,40 @@ Three internal packages, no external deps (Go stdlib only):
 
 ## Repo / branch hygiene
 
-- Remote: `git@github.com:TJC-LP/quartr-cli.git` (private).
+- Remote: `git@github.com:TJC-LP/quartr-cli.git` (public).
+- Module path is `github.com/TJC-LP/quartr-cli`, which must keep matching the
+  repo URL — that is what makes `go install github.com/TJC-LP/quartr-cli/cmd/quartr@latest`
+  resolve. Renaming the repo means renaming the module.
 - `main` is protected — push to a feature branch and open a PR with `gh pr create`. Direct pushes to `main` are rejected.
-- `.env` and `bin/` are gitignored; the `.env.example` exception is preserved.
+- `.env`, `bin/`, and `dist/` are gitignored; the `.env.example` exception is preserved.
+
+## Releases
+
+Cutting a release is one push:
+
+```bash
+git tag -a v0.2.0 -m "v0.2.0"
+git push origin v0.2.0
+```
+
+`.github/workflows/release.yml` fires on `v*` tags, runs the tests, calls
+`make dist VERSION=${tag#v}`, and publishes the archives with `gh release
+create --generate-notes`. A tag containing a hyphen (`v0.2.0-rc1`) publishes as
+a prerelease.
+
+- **Tags carry the `v`; the reported version does not.** `v0.1.0` produces
+  `quartr 0.1.0`. The workflow asserts this before publishing, so a mismatch
+  fails the release rather than shipping a mislabeled binary.
+- **`make dist` is the single build recipe** — CI calls it rather than
+  reimplementing the matrix, and the `dist` job in `ci.yml` runs it on every PR
+  so a broken cross-compile surfaces before a tag exists.
+- **Version resolution lives in `internal/quartr/version.go`**, not in `cli`,
+  so `--version` and the `User-Agent` header cannot drift. Order: `-ldflags
+  -X ...quartr.buildVersion`, then `debug.ReadBuildInfo` (module version for
+  `go install pkg@version`, VCS revision for a checkout build), then `dev`.
+  If you move or rename `buildVersion`, update `VERSION_LDFLAGS` in the Makefile.
+- Release archives bundle `README.md` and `LICENSE` alongside the binary and
+  ship with a `SHA256SUMS` file.
 
 ## Skill
 

@@ -17,17 +17,51 @@ It is designed for API subscribers who want a terminal-friendly interface for co
 - Retries transient `429` and `5xx` responses with short backoff and honors `Retry-After` when present.
 - Uses only the Go standard library.
 
-## Build
+## Install
+
+### From a release
+
+Prebuilt binaries for macOS, Linux, and Windows (amd64 and arm64) are attached
+to every [release](https://github.com/TJC-LP/quartr-cli/releases). Download the
+archive for your platform, verify it, and put `quartr` on your `PATH`:
 
 ```bash
-go build -o bin/quartr ./cmd/quartr
+VERSION=0.1.0
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')     # darwin | linux
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+BASE="https://github.com/TJC-LP/quartr-cli/releases/download/v$VERSION"
+
+curl -fsSLO "$BASE/quartr_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -fsSLO "$BASE/quartr_${VERSION}_SHA256SUMS"
+shasum -a 256 -c quartr_${VERSION}_SHA256SUMS --ignore-missing
+
+tar -xzf "quartr_${VERSION}_${OS}_${ARCH}.tar.gz"
+sudo install "quartr_${VERSION}_${OS}_${ARCH}/quartr" /usr/local/bin/quartr
+quartr --version
 ```
 
-Or install from the project directory:
+macOS Gatekeeper quarantines binaries downloaded with a browser. If you get
+"cannot be opened because the developer cannot be verified", clear the
+attribute: `xattr -d com.apple.quarantine /usr/local/bin/quartr`.
+
+### From source
 
 ```bash
-go install ./cmd/quartr
+go install github.com/TJC-LP/quartr-cli/cmd/quartr@latest
 ```
+
+Or from a clone of this repo:
+
+```bash
+make build      # ./bin/quartr
+make install    # $GOBIN/quartr
+```
+
+`make` bakes the version in via `-ldflags`, so `quartr --version` reports the
+tag. A plain `go build ./cmd/quartr` works too and falls back to whatever the
+go tool stamped: the module version for `go install ...@v0.1.0`, a
+`0.0.0-<timestamp>-<revision>` pseudo-version when building from a checkout, or
+`dev` when no build information is available at all.
 
 ## Configure
 

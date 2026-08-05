@@ -16,12 +16,9 @@ import (
 	"time"
 )
 
-const (
-	// DefaultBaseURL is the production API endpoint used when no override is configured.
-	DefaultBaseURL = "https://api.quartr.com/public/v3"
-	// UserAgent is sent on every outbound request.
-	UserAgent = "quartr-cli/0.1.0"
-)
+// DefaultBaseURL is the production API endpoint used when no override is configured.
+// Version and UserAgent live in version.go.
+const DefaultBaseURL = "https://api.quartr.com/public/v3"
 
 // Client performs authenticated GET requests against the Quartr Public API.
 // It retries 429 and 5xx responses with backoff and honors Retry-After.

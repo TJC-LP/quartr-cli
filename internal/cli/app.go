@@ -11,11 +11,8 @@ import (
 	"fmt"
 	"io"
 
-	"quartr-cli/internal/quartr"
+	"github.com/TJC-LP/quartr-cli/internal/quartr"
 )
-
-// Version is the CLI release string, surfaced via `quartr --version`.
-const Version = "0.1.0"
 
 type app struct {
 	out    io.Writer
@@ -44,7 +41,7 @@ func Run(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	if globals.Version {
-		fmt.Fprintf(out, "quartr %s\n", Version)
+		fmt.Fprintf(out, "quartr %s\n", quartr.Version)
 		return 0
 	}
 

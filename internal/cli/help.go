@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"quartr-cli/internal/quartr"
+	"github.com/TJC-LP/quartr-cli/internal/quartr"
 )
 
 func (a *app) printRootHelp() {
@@ -37,7 +37,7 @@ Examples:
   quartr transcripts download 432907 --output transcript.json
   quartr live transcripts stream 127537 --transcript-version 1.7
   quartr request get /events --query tickers=AAPL --query limit=3 --format json
-`, Version, quartr.DefaultBaseURL, quartr.DefaultConfigPath(), strings.Join(cmds, ", "))
+`, quartr.Version, quartr.DefaultBaseURL, quartr.DefaultConfigPath(), strings.Join(cmds, ", "))
 }
 
 func (a *app) printAuthHelp() {

@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"quartr-cli/internal/output"
+	"github.com/TJC-LP/quartr-cli/internal/output"
 )
 
 // listRequest describes one list-or-paginate call. It exists so callers can

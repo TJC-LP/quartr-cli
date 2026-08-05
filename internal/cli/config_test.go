@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"quartr-cli/internal/quartr"
+	"github.com/TJC-LP/quartr-cli/internal/quartr"
 )
 
 func TestBuildConfigPrecedence(t *testing.T) {
