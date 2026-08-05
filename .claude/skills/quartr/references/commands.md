@@ -17,7 +17,7 @@ specific flag or endpoint at hand.
 | `audio`            | `list`, `get`, `chapters`, `download`       | `/audio`                   | `list` may be tier-restricted; `fileUrl` |
 | `live`             | `list`, `get`                               | `/live`                    | Honors `transcriptVersion`     |
 | `live audio`       | `list`, `get`, `download`                   | `/live/audio`              | Download field is `audio`      |
-| `live transcripts` | `list`, `get`, `stream`                     | `/live/transcripts`        | `list` may be tier-restricted; stream field is `transcript` |
+| `live transcripts` | `list`, `get`, `download`, `stream`         | `/live/transcripts`        | `list` may be tier-restricted; download and stream both read the `transcript` field |
 | `event-types`      | `list`, `get`                               | `/event-types`             | Lookup table; `list` returns the whole catalog |
 | `document-types`   | `list`, `get`                               | `/document-types`          | Lookup table; `list` returns the whole catalog |
 | `request`          | `get`                                       | (any path)                 | Escape hatch; `--query k=v --paginate` |
@@ -62,12 +62,18 @@ Auth precedence: flags > env > config file > defaults.
 --end-date 2024-12-31      ISO 8601
 --updated-after 2024-01-01 incremental sync lower bound
 --updated-before 2024-12-31
---expand event,company     event is expanded by the API; company is joined client-side
---type-ids 1,2,3           events / documents* / transcripts* / reports* / slides* / audio*
---event-ids 128301         documents* / transcripts* / reports* / slides* / audio* / live*
+--expand event             API-side; documents / reports / slides / transcripts / audio.
+                           Dropped on events (a self-expansion) and companies.
+--expand company           client-side join; works on any resource whose rows carry a
+                           companyId, including events. Only `companies` rejects it,
+                           as redundant.
+--type-ids 1,2,3           events / documents / transcripts / reports / slides.
+                           NOT audio — /audio has no typeIds param and drops it.
+--event-ids 128301         documents / transcripts / reports / slides / audio / live*
 --document-group-ids foo   documents* / transcripts* / reports* / slides*
 --states live,willBeLive   live, live-transcripts, live-audio
---transcript-version 1.7   live, live-transcripts, transcripts (get only), audio (get only)
+--transcript-version 1.7   live, live-transcripts (list and get) only; silently
+                           dropped on transcripts/audio, which have no such param
 --sort-by id|date          events list ONLY; rejected with exit 2 everywhere else
 --levels 1,2               chapters subcommand on reports/slides/transcripts/audio
 ```

@@ -10,16 +10,29 @@ companies, events, transcripts, reports, slides, audio, and live events.
 
 ## Binary
 
-This skill ships inside the `quartr-cli` repo. Build the binary from the repo
-root:
+Check for an installed binary first — `command -v quartr` — and use it if it is
+on `PATH`. `quartr --version` prints the release it came from.
+
+If it is not installed, install a prebuilt one:
 
 ```bash
-go build -o bin/quartr ./cmd/quartr
+go install github.com/TJC-LP/quartr-cli/cmd/quartr@latest
 ```
 
-Then invoke it as `./bin/quartr` from the repo root, or `$(git rev-parse --show-toplevel)/bin/quartr`
-from anywhere inside the worktree. Use `go install ./cmd/quartr` instead to
-install it on `$GOBIN/quartr` for PATH-style invocation.
+Or download an archive for the platform from
+<https://github.com/TJC-LP/quartr-cli/releases> (macOS, Linux, and Windows;
+amd64 and arm64), each published with a `SHA256SUMS` file.
+
+This skill also ships inside the `quartr-cli` repo, so when working from a
+clone, build from the repo root instead:
+
+```bash
+make build      # ./bin/quartr, with the version baked in
+```
+
+Then invoke it as `./bin/quartr` from the repo root, or
+`$(git rev-parse --show-toplevel)/bin/quartr` from anywhere inside the
+worktree. `make install` puts it on `$GOBIN/quartr` for PATH-style invocation.
 
 ## Auth
 
