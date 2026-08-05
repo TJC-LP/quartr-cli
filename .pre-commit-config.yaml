@@ -1,11 +1,19 @@
 repos:
-  - repo: https://github.com/golangci/golangci-lint.git
-    rev: v2.12.0
-    hooks:
-      - id: golangci-lint
-        args: [--fix]
   - repo: local
     hooks:
+      # Uses the golangci-lint on PATH rather than the upstream pre-commit
+      # repo, which builds the linter from source with whatever Go it finds.
+      # A linter built with Go < 1.26 refuses to load this config ("the Go
+      # language version used to build golangci-lint is lower than the
+      # targeted Go version"). Install the matching binary with:
+      #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run --fix
+        language: system
+        types: [go]
+        pass_filenames: false
+        require_serial: true
       - id: go-test
         name: go test
         entry: go test ./...

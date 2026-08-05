@@ -1,5 +1,10 @@
 package cli
 
+import (
+	"fmt"
+	"strings"
+)
+
 type paramSet []string
 
 func params(xs ...string) paramSet {
@@ -42,6 +47,14 @@ type resource struct {
 	listParams    paramSet
 	getParams     paramSet
 	summaryParams paramSet
+	// sortFields lists the values the endpoint accepts for sortBy. Empty
+	// means the endpoint has no sortBy parameter at all, which the CLI
+	// reports instead of dropping the flag on the floor.
+	sortFields paramSet
+	// fullCatalog marks a bounded lookup table that is only useful whole.
+	// Those endpoints page like any other, so the default limit of 10 turns
+	// a 46-row catalog into a 10-row one with nothing to say it was cut.
+	fullCatalog bool
 }
 
 var (
@@ -69,6 +82,11 @@ var (
 	summaryParams       = params("length", "plain")
 	getExpandParams     = params("expand")
 	getLiveParams       = params("transcriptVersion")
+
+	// eventSortFields mirrors the enum the API reports when sortBy is
+	// invalid: "sortBy must be one of the following values: id, date".
+	// /events is the only list endpoint that accepts the parameter.
+	eventSortFields = params("id", "date")
 )
 
 var resources = map[string]resource{
@@ -85,6 +103,7 @@ var resources = map[string]resource{
 		summaryPath:   "/events/{id}/summary",
 		listParams:    mergeParams(baseListParams, params("typeIds", "sortBy")),
 		summaryParams: summaryParams,
+		sortFields:    eventSortFields,
 	},
 	"documents": {
 		name:          "documents",
@@ -160,20 +179,58 @@ var resources = map[string]resource{
 		getParams:     getLiveParams,
 	},
 	"event-types": {
-		name:       "event-types",
-		listPath:   "/event-types",
-		getPath:    "/event-types/{id}",
-		listParams: simpleListParams,
+		name:        "event-types",
+		listPath:    "/event-types",
+		getPath:     "/event-types/{id}",
+		listParams:  simpleListParams,
+		fullCatalog: true,
 	},
 	"document-types": {
-		name:       "document-types",
-		listPath:   "/document-types",
-		getPath:    "/document-types/{id}",
-		listParams: simpleListParams,
+		name:        "document-types",
+		listPath:    "/document-types",
+		getPath:     "/document-types/{id}",
+		listParams:  simpleListParams,
+		fullCatalog: true,
 	},
 }
 
 func resourceByName(name string) (resource, bool) {
 	r, ok := resources[name]
 	return r, ok
+}
+
+// validateSortBy rejects --sort-by on list endpoints that have no sortBy
+// parameter. Forwarding it is a 400 and dropping it is worse: rows come back
+// in insertion order, so a caller who trusts the flag silently reads stale
+// documents off the first page.
+func validateSortBy(r resource, sortBy string) error {
+	sortBy = strings.TrimSpace(sortBy)
+	if sortBy == "" {
+		return nil
+	}
+	if len(r.sortFields) > 0 {
+		if r.sortFields.allows(sortBy) {
+			return nil
+		}
+		return usagef("--sort-by %s is not supported by `quartr %s list`; supported sort fields: %s",
+			sortBy, r.name, strings.Join(r.sortFields, ", "))
+	}
+	return usagef("--sort-by is not supported by `quartr %s list`: the Quartr endpoint has no sortBy "+
+		"parameter, so rows come back in insertion order and the newest items may be missing from the "+
+		"first page.\n\n%s", r.name, sortRecipe(r))
+}
+
+// sortRecipe is the "do this instead" paragraph shown both by the --sort-by
+// error and by `quartr <resource> --help`.
+func sortRecipe(r resource) string {
+	const directionNote = "`--direction asc|desc` is accepted here, but it reverses insertion order, not date order."
+	if !r.listParams.allows("eventIds") {
+		return "Only `quartr events list` supports --sort-by (fields: " +
+			strings.Join(eventSortFields, ", ") + ").\n" + directionNote
+	}
+	return fmt.Sprintf(`Sort events first, then fetch by event id:
+  quartr events list --tickers AAPL --sort-by date --direction desc --limit 5
+  quartr %s list --event-ids <id>
+
+%s`, r.name, directionNote)
 }

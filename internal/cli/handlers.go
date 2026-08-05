@@ -95,6 +95,8 @@ func (a *app) handleResource(r resource, args []string) error {
 		return a.listResource(r, rest)
 	case "get", "show":
 		return a.getResource(r, rest)
+	case "resolve":
+		return a.resolveResource(r, rest)
 	case "summary", "summarize":
 		return a.summaryResource(r, rest)
 	case "pages":
@@ -123,13 +125,35 @@ func (a *app) listResource(r resource, args []string) error {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
+	if err := validateSortBy(r, lf.sortBy); err != nil {
+		return err
+	}
+	var joinCompany bool
+	lf.expand, joinCompany = splitExpand(lf.expand)
+	if joinCompany {
+		if err := checkCompanyExpand(r); err != nil {
+			return err
+		}
+	}
+	if err := a.applyQualifiedTickers(context.Background(), r, &lf); err != nil {
+		return err
+	}
+	// A lookup table is only useful whole: the type ids people need most
+	// (25 = shareholder letter, 46 = DEFM14A) live past the default page.
+	if r.fullCatalog && !flagWasPassed(args, "limit") && !flagWasPassed(args, "cursor") {
+		lf.all = true
+	}
 	if lf.all && !flagWasPassed(args, "limit") {
 		lf.limit = 500
 	}
 
-	params := lf.toParams(r.listParams, r.name == "companies")
-	fields := parseCSV(lf.fields)
-	return a.fetchList(r.listPath, params, lf.all, fields)
+	return a.fetchList(listRequest{
+		path:        r.listPath,
+		params:      lf.toParams(r.listParams, r.name == "companies"),
+		all:         lf.all,
+		fields:      parseCSV(lf.fields),
+		joinCompany: joinCompany,
+	})
 }
 
 func (a *app) getResource(r resource, args []string) error {
@@ -138,7 +162,7 @@ func (a *app) getResource(r resource, args []string) error {
 	}
 	fs := newFlagSet(r.name+" get", a.errOut)
 	fields := fs.String("fields", "", "comma-separated output fields")
-	expand := fs.String("expand", "", "fields to expand, e.g. event")
+	expand := fs.String("expand", "", "fields to expand: event (API) or company (joined client-side)")
 	transcriptVersion := fs.String("transcript-version", "", "live transcript version")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
@@ -146,21 +170,77 @@ func (a *app) getResource(r resource, args []string) error {
 	if fs.NArg() != 1 {
 		return fmt.Errorf("usage: quartr %s get <id>", r.name)
 	}
+	apiExpand, joinCompany := splitExpand(*expand)
+	if joinCompany {
+		if err := checkCompanyExpand(r); err != nil {
+			return err
+		}
+	}
 
 	params := url.Values{}
-	if r.getParams.allows("expand") && *expand != "" {
-		params.Set("expand", *expand)
+	if r.getParams.allows("expand") && apiExpand != "" {
+		params.Set("expand", apiExpand)
 	}
 	if r.getParams.allows("transcriptVersion") && *transcriptVersion != "" {
 		params.Set("transcriptVersion", *transcriptVersion)
 	}
 
+	ctx := context.Background()
 	path := strings.ReplaceAll(r.getPath, "{id}", url.PathEscape(fs.Arg(0)))
-	obj, _, err := a.client.GetJSON(context.Background(), path, params)
+	obj, _, err := a.client.GetJSON(ctx, path, params)
 	if err != nil {
 		return err
 	}
+	if joinCompany {
+		a.joinCompanies(ctx, joinableRows(obj))
+	}
 	return output.Write(a.out, obj, output.Options{Format: a.cfg.Format(), Fields: parseCSV(*fields)})
+}
+
+// resolveResource implements `quartr companies resolve <ticker|cik>`: the one
+// step that turns an ambiguous ticker into a companyId you can trust. Quartr
+// matches tickers across every exchange, so this prints every candidate with
+// the exchange pairs that matched rather than guessing which one was meant.
+func (a *app) resolveResource(r resource, args []string) error {
+	if r.name != "companies" {
+		return usagef("`resolve` is only available on `quartr companies`")
+	}
+	fs := newFlagSet("companies resolve", a.errOut)
+	fields := fs.String("fields", "", "comma-separated output fields")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return usagef("usage: quartr companies resolve <ticker|cik>   (e.g. BLD, NYSE:BLD, 0001739445)")
+	}
+
+	query := strings.TrimSpace(fs.Arg(0))
+	if query == "" || strings.ContainsAny(query, " \t") {
+		return usagef("the Quartr API has no company name search; pass a ticker (BLD or NYSE:BLD) or a CIK")
+	}
+
+	ctx := context.Background()
+	var companies []map[string]any
+	var err error
+	if looksLikeCIK(query) {
+		companies, err = a.lookupCompanies(ctx, "ciks", query, nil)
+	} else {
+		specs := parseTickerSpecs(query)
+		companies, err = a.lookupCompanies(ctx, "tickers", bareTickerCSV(specs), specs)
+	}
+	if err != nil {
+		return err
+	}
+	if len(companies) == 0 {
+		return fmt.Errorf("no company matches %q", query)
+	}
+
+	chosen := parseCSV(*fields)
+	if len(chosen) == 0 {
+		chosen = []string{"id", "name", "country", "matchedTickers"}
+	}
+	result := map[string]any{"data": companies, "count": len(companies)}
+	return output.Write(a.out, result, output.Options{Format: a.cfg.Format(), Fields: chosen})
 }
 
 func (a *app) summaryResource(r resource, args []string) error {
@@ -207,13 +287,20 @@ func (a *app) childListResource(r resource, pathTpl string, allowed paramSet, ar
 	if fs.NArg() != 1 {
 		return fmt.Errorf("usage: quartr %s %s <id>", r.name, child)
 	}
+	if strings.TrimSpace(lf.sortBy) != "" {
+		return usagef("--sort-by is not supported by `quartr %s %s`; rows are returned in document order",
+			r.name, child)
+	}
 	if lf.all && !flagWasPassed(args, "limit") {
 		lf.limit = 500
 	}
 
-	params := lf.toParams(allowed, false)
-	path := strings.ReplaceAll(pathTpl, "{id}", url.PathEscape(fs.Arg(0)))
-	return a.fetchList(path, params, lf.all, parseCSV(lf.fields))
+	return a.fetchList(listRequest{
+		path:   strings.ReplaceAll(pathTpl, "{id}", url.PathEscape(fs.Arg(0))),
+		params: lf.toParams(allowed, false),
+		all:    lf.all,
+		fields: parseCSV(lf.fields),
+	})
 }
 
 func (a *app) downloadResource(r resource, args []string) error {
@@ -221,7 +308,7 @@ func (a *app) downloadResource(r resource, args []string) error {
 		return fmt.Errorf("%s does not have a configured download URL field", r.name)
 	}
 	fs := newFlagSet(r.name+" download", a.errOut)
-	outPath := fs.String("output", "", "output file path; defaults to a name based on id and URL")
+	outPath := fs.String("output", "", "output file path, or - to stream to stdout; defaults to a name based on id and URL")
 	urlField := fs.String("url-field", r.downloadField, "metadata URL field to download")
 	withAPIKey := fs.Bool("with-api-key", false, "include x-api-key when fetching the file URL")
 	expand := fs.String("expand", "", "fields to expand on the metadata request")
@@ -248,27 +335,43 @@ func (a *app) downloadResource(r resource, args []string) error {
 		return err
 	}
 
+	apiKey := ""
+	if *withAPIKey {
+		apiKey = a.cfg.APIKey()
+	}
+
+	// `--output -` streams the document itself to stdout so it can be piped
+	// or redirected. Everything else this command prints goes to stderr, so
+	// `quartr transcripts download <id> --output - > f.json` writes the
+	// document and nothing else.
+	if *outPath == "-" {
+		_, err := a.client.Download(context.Background(), downloadURL, apiKey, a.out)
+		return err
+	}
+
 	dest := *outPath
 	if dest == "" {
 		dest = defaultFileName(r.name, id, downloadURL)
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil && filepath.Dir(dest) != "." {
-		return err
+	if dir := filepath.Dir(dest); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
 	}
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	apiKey := ""
-	if *withAPIKey {
-		apiKey = a.cfg.APIKey()
-	}
 	if _, err := a.client.Download(context.Background(), downloadURL, apiKey, f); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "Saved %s\n", dest)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", dest, err)
+	}
+	// stderr, not stdout: a redirect is supposed to capture the document.
+	fmt.Fprintf(a.errOut, "Saved %s\n", dest)
 	return nil
 }
 
@@ -340,7 +443,7 @@ func (a *app) handleRequest(args []string) error {
 		params.Add(k, v)
 	}
 	if *paginate {
-		return a.fetchList(fs.Arg(0), params, true, parseCSV(*fields))
+		return a.fetchList(listRequest{path: fs.Arg(0), params: params, all: true, fields: parseCSV(*fields)})
 	}
 
 	obj, _, err := a.client.GetJSON(context.Background(), fs.Arg(0), params)

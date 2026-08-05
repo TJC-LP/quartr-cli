@@ -12,14 +12,31 @@ import (
 	"quartr-cli/internal/output"
 )
 
-func (a *app) fetchList(path string, params url.Values, all bool, fields []string) error {
+// listRequest describes one list-or-paginate call. It exists so callers can
+// opt into post-fetch shaping (currently the company join) without growing
+// the fetchList signature every time.
+type listRequest struct {
+	path        string
+	params      url.Values
+	all         bool
+	fields      []string
+	joinCompany bool
+}
+
+func (a *app) fetchList(req listRequest) error {
 	ctx := context.Background()
-	if !all {
+	path, params := req.path, req.params
+	if !req.all {
 		obj, _, err := a.client.GetJSON(ctx, path, params)
 		if err != nil {
 			return err
 		}
-		return output.Write(a.out, obj, output.Options{Format: a.cfg.Format(), Fields: fields})
+		if req.joinCompany {
+			// dataRows hands back the same maps the response holds, so
+			// filling them in updates obj.
+			a.joinCompanies(ctx, dataRows(obj))
+		}
+		return output.Write(a.out, obj, output.Options{Format: a.cfg.Format(), Fields: req.fields})
 	}
 
 	allRows := make([]map[string]any, 0)
@@ -50,8 +67,13 @@ func (a *app) fetchList(path string, params url.Values, all bool, fields []strin
 		params.Set("cursor", next)
 	}
 
+	if req.joinCompany {
+		// One join across every page, so a 5-page pull is still one
+		// /companies round-trip per 100 distinct ids.
+		a.joinCompanies(ctx, allRows)
+	}
 	wrapped := map[string]any{"data": allRows, "pagination": finalPagination, "count": len(allRows)}
-	return output.Write(a.out, wrapped, output.Options{Format: a.cfg.Format(), Fields: fields})
+	return output.Write(a.out, wrapped, output.Options{Format: a.cfg.Format(), Fields: req.fields})
 }
 
 func dataRows(obj map[string]any) []map[string]any {

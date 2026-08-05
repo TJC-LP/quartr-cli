@@ -71,6 +71,13 @@ func TestListFlagsMapCompanyIDsPerEndpoint(t *testing.T) {
 		t.Fatalf("companies companyIds: expected empty, got %q", got)
 	}
 
+	// --company-ids and --ids feed the same parameter on this endpoint, so
+	// passing both has to merge rather than let one overwrite the other.
+	merged := listFlags{limit: 10, companyIDs: "4742", ids: "3694,4742"}.toParams(companies.listParams, true)
+	if got := merged.Get("ids"); got != "4742,3694" {
+		t.Fatalf("companies ids: expected merged 4742,3694, got %q", got)
+	}
+
 	events, ok := resourceByName("events")
 	if !ok {
 		t.Fatal("events resource not found")

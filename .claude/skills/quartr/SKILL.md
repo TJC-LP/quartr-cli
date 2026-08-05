@@ -79,16 +79,19 @@ explicitly passed, `--all` raises it to 500 to minimize round-trips.
 ```bash
 # Companies
 quartr companies list --tickers AAPL,MSFT --fields id,name,country
+quartr companies resolve CE                # every company using that ticker
 quartr companies get 4742 --format json
 
 # Events (earnings calls, AGMs, etc.)
 quartr events list --tickers AAPL --sort-by date --direction desc --limit 10
+quartr events list --tickers NYSE:BLD --expand company --limit 5
 quartr events get 406161 --format json
 
 # Transcripts
-quartr transcripts list --tickers AAPL --expand event --limit 10
+quartr transcripts list --tickers AAPL --expand event,company --limit 10
 quartr transcripts get <id> --format json
 quartr transcripts download <id> --output transcript.json
+quartr transcripts download <id> --output - | jq .    # stream, no file
 quartr transcripts chapters <id> --levels 1,2
 
 # Reports (10-K, 10-Q, 8-K, etc.)
@@ -111,9 +114,9 @@ quartr live list --states live,willBeLive
 quartr live transcripts list --states live
 quartr live transcripts stream <id> --transcript-version 1.7
 
-# Lookup tables (use these to map names → IDs before filtering)
+# Lookup tables (whole catalog, not a first page; map names → IDs before filtering)
 quartr event-types list --format csv       # Q1=26, Q2=27, Q3=28, Q4=29 …
-quartr document-types list --format csv    # 10-K=11, 10-Q=7, 8-K=10, 20-F=13 …
+quartr document-types list --format csv    # 10-K=11, 10-Q=7, 8-K=10, 25=shareholder letter …
 ```
 
 ## Escape hatch
@@ -132,9 +135,29 @@ quartr request get /events --query tickers=AAPL --query limit=3 --format json
 - **Companies use `ids`, not `companyIds`.** The CLI auto-maps `--company-ids`
   to `ids` for the `companies` resource. Other resources use `companyIds`.
   This only matters when reading raw API responses or using `request get`.
+- **Only `events list` can sort.** `--sort-by` (fields `id`, `date`) exists
+  nowhere else and is rejected with exit 2, because those endpoints return rows
+  in insertion order — the newest filing or call is often *not* on the first
+  page. To get the latest documents: sort events, then filter by `--event-ids`,
+  or pull with `--all` and sort locally on `createdAt`. `--direction` works
+  everywhere but reverses insertion order, not date order.
+- **Tickers collide across exchanges.** `--tickers CE` returns Celanese,
+  Credito Emiliano and Cortus Energy. Run `quartr companies resolve <ticker>`
+  when a symbol might be shared, then either use `--company-ids` or qualify the
+  ticker as `NYSE:BLD` (the CLI resolves it to a companyId before querying).
+  There is no name search in the API — tickers and CIKs only.
+- **`--expand company` is a client-side join.** The API rejects
+  `expand=company`; the CLI strips it and batch-fetches `/companies` instead.
+  Use it whenever rows need to be attributable — otherwise they carry only a
+  bare `companyId` and a collision is invisible.
 - **Tier-restricted endpoints** return `403 Forbidden` on the user's API tier.
   Observed restrictions: `events summary`, `audio list`, `live transcripts list`.
-  Surface the error verbatim — do not retry, hide, or silently fall back.
+  The CLI prints a `hint:` line clarifying that 403 is entitlement, not
+  authentication. Surface the error verbatim — do not retry, hide, silently
+  fall back, or start debugging the API key. A rejected key returns 401.
+- **Downloads always write a file** named `<resource>-<id>.<ext>` unless
+  `--output` says otherwise; the `Saved <path>` line goes to stderr. To pipe or
+  redirect the document itself, use `--output -`.
 - **Downloads don't send the API key by default.** The metadata response
   contains a public file URL. Add `--with-api-key` only if a 401/403 occurs
   fetching the file URL itself.

@@ -18,7 +18,13 @@ pre-commit run --all-files    # lint+test against the whole tree
 ~/go/bin/golangci-lint run    # lint without pre-commit (needs v2.12+)
 ```
 
-`pre-commit install` was already run in this clone — every commit runs golangci-lint (with `--fix`) and `go test ./...`. The hooks pin golangci-lint v2.12.0; CI pins the same version through `golangci/golangci-lint-action@v7`.
+`pre-commit install` was already run in this clone — every commit runs golangci-lint (with `--fix`) and `go test ./...`. The lint hook shells out to the `golangci-lint` on `PATH` instead of the upstream pre-commit repo, which builds the linter from source with whatever Go it finds; a linter built with Go < 1.26 refuses to load this config. Install the matching binary once:
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0
+```
+
+CI pins the same version through `golangci/golangci-lint-action@v7`.
 
 ## Architecture
 
