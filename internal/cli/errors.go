@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"quartr-cli/internal/quartr"
+	"github.com/TJC-LP/quartr-cli/internal/quartr"
 )
 
 // usageError marks a failure caused by the command line the user typed

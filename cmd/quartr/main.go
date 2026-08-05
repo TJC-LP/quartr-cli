@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"quartr-cli/internal/cli"
+	"github.com/TJC-LP/quartr-cli/internal/cli"
 )
 
 func main() {

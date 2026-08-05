@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"quartr-cli/internal/output"
-	"quartr-cli/internal/quartr"
+	"github.com/TJC-LP/quartr-cli/internal/output"
+	"github.com/TJC-LP/quartr-cli/internal/quartr"
 )
 
 func (a *app) handleAuth(args []string) error {

@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"quartr-cli/internal/quartr"
+	"github.com/TJC-LP/quartr-cli/internal/quartr"
 )
 
 type globalOverrides struct {
