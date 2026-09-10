@@ -589,3 +589,218 @@ func TestListAllFollowsPagination(t *testing.T) {
 		t.Fatalf("expected both rows, got %s", out.String())
 	}
 }
+
+// textServer serves a parsed-text envelope for reports/1 whose textUrl points
+// back at the same server, which answers with body.
+func textServer(t *testing.T, body string) (*httptest.Server, *[]string) {
+	t.Helper()
+	paths := &[]string{}
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*paths = append(*paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/documents/reports/1/text":
+			if got := r.Header.Get("x-api-key"); got != "secret" {
+				t.Errorf("expected x-api-key on the metadata request, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"documentId":1,"textUrl":"` + srv.URL + `/artifacts/abc.markdown?ref=x","updatedAt":"2026-08-05T22:36:36.000Z"}}`))
+		case "/artifacts/abc.markdown":
+			if got := r.Header.Get("x-api-key"); got != "" {
+				t.Errorf("expected no x-api-key on the CDN fetch, got %q", got)
+			}
+			w.Header().Set("Content-Type", "text/markdown")
+			_, _ = w.Write([]byte(body))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	return srv, paths
+}
+
+func TestTextStreamsMarkdownToStdout(t *testing.T) {
+	const body = "# Apple Inc.\n\n|Net sales|64,040|\n"
+	srv, _ := textServer(t, body)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"reports", "text", "1"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	// stdout is the Markdown, byte for byte, so `> report.md` captures it.
+	if out.String() != body {
+		t.Fatalf("expected the Markdown on stdout, got %q", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("expected nothing on stderr, got %q", errOut.String())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no files written, got %v", entries)
+	}
+}
+
+func TestTextWritesFileWithOutput(t *testing.T) {
+	const body = "# Apple Inc.\n"
+	srv, _ := textServer(t, body)
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "nested", "apple.md")
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"reports", "text", "1", "--output", dest}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	b, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != body {
+		t.Fatalf("unexpected file body: %q", string(b))
+	}
+	if out.Len() != 0 {
+		t.Fatalf("expected clean stdout, got %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "Saved "+dest) {
+		t.Fatalf("expected the saved path on stderr, got %q", errOut.String())
+	}
+}
+
+func TestTextMetadataPrintsEnvelopeWithoutFetching(t *testing.T) {
+	srv, paths := textServer(t, "unused")
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL, "--format", "json",
+		"reports", "text", "1", "--metadata"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "textUrl") || !strings.Contains(out.String(), "abc.markdown") {
+		t.Fatalf("expected the envelope on stdout, got %s", out.String())
+	}
+	if len(*paths) != 1 {
+		t.Fatalf("expected only the metadata request, got %v", *paths)
+	}
+}
+
+func TestTextUnavailableOnTranscripts(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", "http://127.0.0.1:0",
+		"transcripts", "text", "1"}, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("expected code 1, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "does not have a text endpoint") {
+		t.Fatalf("expected the missing-endpoint message, got %s", errOut.String())
+	}
+}
+
+func TestCompaniesSegmentsIsAChildList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/companies/4742/segments" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("limit"); got != "5" {
+			t.Fatalf("expected limit=5, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"companyId":4742,"fiscalYear":2024,"segmentItem":"Revenue","total":187442}],"pagination":{"nextCursor":null}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL, "--format", "json",
+		"companies", "segments", "4742", "--limit", "5"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "Revenue") {
+		t.Fatalf("expected segment rows, got %s", out.String())
+	}
+}
+
+func TestOpenfigisForwardedOnlyToCompanies(t *testing.T) {
+	var gotCompanies, gotEvents url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/companies":
+			gotCompanies = r.URL.Query()
+		case "/events":
+			gotEvents = r.URL.Query()
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"nextCursor":null}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"companies", "list", "--openfigis", "BBG000B9XRY4,bbg000b9xry4,BBG001S5N8V8"}, &out, &errOut); code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if got := gotCompanies.Get("openfigis"); got != "BBG000B9XRY4,BBG001S5N8V8" {
+		t.Fatalf("expected deduped openfigis, got %q", got)
+	}
+	if code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"events", "list", "--openfigis", "BBG000B9XRY4"}, &out, &errOut); code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if _, ok := gotEvents["openfigis"]; ok {
+		t.Fatalf("expected openfigis to be dropped on /events, got %v", gotEvents)
+	}
+}
+
+func TestCompaniesResolveAcceptsFIGI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/companies" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("openfigis"); got != "BBG000B9XRY4" {
+			t.Fatalf("expected openfigis=BBG000B9XRY4, got %q", got)
+		}
+		if _, ok := r.URL.Query()["tickers"]; ok {
+			t.Fatalf("expected no tickers filter, got %v", r.URL.Query())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":4742,"name":"Apple Inc","country":"US","tickers":[{"exchange":"NasdaqGS","ticker":"AAPL"}]}],"pagination":{"nextCursor":null}}`))
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--no-config", "--api-key", "secret", "--base-url", srv.URL,
+		"companies", "resolve", "BBG000B9XRY4"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "Apple Inc") || !strings.Contains(out.String(), "NasdaqGS:AAPL") {
+		t.Fatalf("expected the resolved company, got %s", out.String())
+	}
+}
+
+func TestLooksLikeFIGI(t *testing.T) {
+	for s, want := range map[string]bool{
+		"BBG000B9XRY4": true,
+		"BBG001S5N8V8": true,
+		"AAPL":         false,
+		"0000320193":   false,
+		"BBG000B9XRY":  false, // 11 chars
+		"BBg000B9XRY4": false, // lower case
+		"BBQ000B9XRY4": false, // no G in third position
+	} {
+		if got := looksLikeFIGI(s); got != want {
+			t.Errorf("looksLikeFIGI(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

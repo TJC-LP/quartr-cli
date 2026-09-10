@@ -36,12 +36,18 @@ func (s paramSet) allows(name string) bool {
 }
 
 type resource struct {
-	name          string
-	listPath      string
-	getPath       string
-	summaryPath   string
-	pagesPath     string
-	chaptersPath  string
+	name         string
+	listPath     string
+	getPath      string
+	summaryPath  string
+	pagesPath    string
+	chaptersPath string
+	// textPath is the parsed-document endpoint: it answers with a CDN link
+	// to the Markdown rendering of a report or slide deck, not the text
+	// itself. Only reports and slides have one.
+	textPath string
+	// segmentsPath is the company segments child list.
+	segmentsPath  string
 	downloadField string
 	streamField   string
 	listParams    paramSet
@@ -78,7 +84,8 @@ var (
 	liveListParams      = mergeParams(params("countries", "exchanges", "tickers", "isins", "ciks", "companyIds", "eventIds", "states", "startDate", "endDate", "updatedAfter", "updatedBefore", "limit", "cursor", "direction"), params("transcriptVersion"))
 	liveAudioListParams = params("countries", "exchanges", "tickers", "isins", "ciks", "companyIds", "eventIds", "states", "startDate", "endDate", "updatedAfter", "updatedBefore", "limit", "cursor", "direction")
 	simpleListParams    = params("limit", "cursor", "direction")
-	companyListParams   = params("countries", "exchanges", "tickers", "isins", "ciks", "ids", "updatedAfter", "updatedBefore", "limit", "cursor", "direction")
+	companyListParams   = params("countries", "exchanges", "tickers", "isins", "ciks", "openfigis", "ids", "updatedAfter", "updatedBefore", "limit", "cursor", "direction")
+	childListParams     = params("limit", "cursor", "direction")
 	summaryParams       = params("length", "plain")
 	getExpandParams     = params("expand")
 	getLiveParams       = params("transcriptVersion")
@@ -91,10 +98,11 @@ var (
 
 var resources = map[string]resource{
 	"companies": {
-		name:       "companies",
-		listPath:   "/companies",
-		getPath:    "/companies/{id}",
-		listParams: companyListParams,
+		name:         "companies",
+		listPath:     "/companies",
+		getPath:      "/companies/{id}",
+		segmentsPath: "/companies/{id}/segments",
+		listParams:   companyListParams,
 	},
 	"events": {
 		name:          "events",
@@ -119,6 +127,7 @@ var resources = map[string]resource{
 		getPath:       "/documents/reports/{id}",
 		pagesPath:     "/documents/reports/{id}/pages",
 		summaryPath:   "/documents/reports/{id}/summary",
+		textPath:      "/documents/reports/{id}/text",
 		downloadField: "fileUrl",
 		listParams:    docListParams,
 		getParams:     getExpandParams,
@@ -130,6 +139,7 @@ var resources = map[string]resource{
 		getPath:       "/documents/slides/{id}",
 		pagesPath:     "/documents/slides/{id}/pages",
 		summaryPath:   "/documents/slides/{id}/summary",
+		textPath:      "/documents/slides/{id}/text",
 		downloadField: "fileUrl",
 		listParams:    docListParams,
 		getParams:     getExpandParams,
