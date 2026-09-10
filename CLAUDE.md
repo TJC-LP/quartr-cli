@@ -22,7 +22,7 @@ pre-commit run --all-files    # lint+test against the whole tree
 `pre-commit install` was already run in this clone — every commit runs golangci-lint (with `--fix`) and `go test ./...`. The lint hook shells out to the `golangci-lint` on `PATH` instead of the upstream pre-commit repo, which builds the linter from source with whatever Go it finds; a linter built with Go < 1.27 refuses to load this config, and one built with an older patch release than the `go` on `PATH` panics while type-checking the standard library (`file requires newer Go version`). Whenever the toolchain moves, rebuild the linter with it:
 
 ```bash
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 ```
 
 CI pins the same version through `golangci/golangci-lint-action@v7`.
