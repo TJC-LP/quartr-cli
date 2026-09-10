@@ -19,7 +19,7 @@ pre-commit run --all-files    # lint+test against the whole tree
 ~/go/bin/golangci-lint run    # lint without pre-commit (needs v2.12+)
 ```
 
-`pre-commit install` was already run in this clone — every commit runs golangci-lint (with `--fix`) and `go test ./...`. The lint hook shells out to the `golangci-lint` on `PATH` instead of the upstream pre-commit repo, which builds the linter from source with whatever Go it finds; a linter built with Go < 1.26 refuses to load this config. Install the matching binary once:
+`pre-commit install` was already run in this clone — every commit runs golangci-lint (with `--fix`) and `go test ./...`. The lint hook shells out to the `golangci-lint` on `PATH` instead of the upstream pre-commit repo, which builds the linter from source with whatever Go it finds; a linter built with Go < 1.27 refuses to load this config, and one built with an older patch release than the `go` on `PATH` panics while type-checking the standard library (`file requires newer Go version`). Whenever the toolchain moves, rebuild the linter with it:
 
 ```bash
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0
@@ -47,7 +47,7 @@ Three internal packages, no external deps (Go stdlib only):
 
 ## Lint config notes
 
-- golangci-lint v2 syntax (config has `version: "2"` at top). v1 is built with Go 1.24 and rejects this repo's Go 1.26 target — never downgrade.
+- golangci-lint v2 syntax (config has `version: "2"` at top). v1 is built with Go 1.24 and rejects this repo's Go 1.27 target — never downgrade.
 - `gomodguard` is referenced as `gomodguard_v2` after the v2.12 deprecation rename.
 - `gocritic.hugeParam` is intentionally disabled — passing `resource` (200B) by value is the design, not a perf bug.
 - `gosec G304/G602` excluded globally — file paths from CLI args and bounds-checked slice indexes are inherent to the tool.
