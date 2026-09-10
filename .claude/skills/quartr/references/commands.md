@@ -8,11 +8,11 @@ specific flag or endpoint at hand.
 | Command            | Operations                                  | Base path                  | Notes                          |
 |--------------------|---------------------------------------------|----------------------------|--------------------------------|
 | `auth`             | `login`, `show`, `logout`                   | (local)                    | Manages `~/.config/quartr/config.json` |
-| `companies`        | `list`, `get`, `resolve`                    | `/companies`               | Uses `ids` API param, not `companyIds`; `resolve <ticker\|cik>` lists collision candidates |
+| `companies`        | `list`, `get`, `resolve`, `segments`        | `/companies`               | Uses `ids` API param, not `companyIds`; `resolve <ticker\|cik\|figi>` lists collision candidates; `segments` is a legacy dataset (403 on most plans) |
 | `events`           | `list`, `get`, `summary`                    | `/events`                  | `summary` is tier-restricted   |
 | `documents`        | `list`, `get`, `download`                   | `/documents`               | Generic parent; prefer typed resources |
-| `reports`          | `list`, `get`, `summary`, `pages`, `download` | `/documents/reports`     | `fileUrl` is the download field |
-| `slides`           | `list`, `get`, `summary`, `pages`, `download` | `/documents/slides`      | `fileUrl` is the download field |
+| `reports`          | `list`, `get`, `summary`, `pages`, `text`, `download` | `/documents/reports` | `fileUrl` is the download field; `text` streams parsed Markdown (paid package) |
+| `slides`           | `list`, `get`, `summary`, `pages`, `text`, `download` | `/documents/slides`  | `fileUrl` is the download field; `text` streams parsed Markdown (paid package) |
 | `transcripts`      | `list`, `get`, `summary`, `chapters`, `download` | `/documents/transcripts` | `fileUrl` is the download field |
 | `audio`            | `list`, `get`, `chapters`, `download`       | `/audio`                   | `list` may be tier-restricted; `fileUrl` |
 | `live`             | `list`, `get`                               | `/live`                    | Honors `transcriptVersion`     |
@@ -57,6 +57,7 @@ Auth precedence: flags > env > config file > defaults.
 --exchanges NYSE,NASDAQ    exchange symbols
 --isins US0378331005       ISINs
 --ciks 0000320193          SEC CIKs
+--openfigis BBG000B9XRY4   OpenFIGI codes (figi, compositeFigi or shareClassFigi); companies only
 --ids foo,bar              alias used by companies-only consumers
 --start-date 2024-01-01    ISO 8601
 --end-date 2024-12-31      ISO 8601
@@ -96,6 +97,12 @@ company` on rows that carry no companyId. Both exit 2.
 | `<r> summary`    | `--plain`                | Strip embedded document sources                    |
 | `<r> summary`    | `--fields`               | Output columns                                     |
 | `<r> pages`      | list flags               | reports, slides only                               |
+| `<r> text`       | (none)                   | reports, slides only; prints parsed Markdown on **stdout** |
+| `<r> text`       | `--output PATH`          | Write the Markdown to a file instead; `Saved <path>` on stderr |
+| `<r> text`       | `--metadata`             | Print the envelope (`documentId`, `textUrl`, `updatedAt`) instead of fetching it |
+| `<r> text`       | `--fields`               | Output columns, only with `--metadata`             |
+| `<r> text`       | `--with-api-key`         | Send `x-api-key` when fetching `textUrl`           |
+| `<r> segments`   | list flags               | companies only (`limit`, `cursor`, `direction`)    |
 | `<r> chapters`   | list flags + `--levels`  | transcripts, audio only                            |
 | `<r> download`   | `--output PATH`          | Defaults to `<resource>-<id>.<ext>` in cwd; `-` streams to stdout |
 | `<r> download`   | (status line)            | `Saved <path>` goes to **stderr**, never stdout    |
@@ -205,12 +212,18 @@ and pass it via `--type-ids`.
 
 ## Key code locations (for skill maintenance)
 
+Quartr publishes the live spec at <https://api.quartr.com/public/v3/openapi.json>
+and a docs index at <https://quartr.com/docs/llms.txt> (datasets, changelog at
+`/docs/changelogs/api-updates.md`). When Quartr announces a new dataset, diff
+the spec's `paths` against the `resources` map first — that is how `text`,
+`segments`, and `openfigis` were found.
+
 If the CLI gets new commands, refresh this reference from:
 
 - `internal/cli/app.go` — top-level command dispatch
 - `internal/cli/resources.go` — resource map, paths, allowed param sets
 - `internal/cli/flags.go` — global flags, listFlags, `toParams`
-- `internal/cli/handlers.go` — list/get/summary/pages/chapters/download/stream/request
+- `internal/cli/handlers.go` — list/get/summary/pages/text/chapters/segments/download/stream/request
 - `internal/output/output.go` — format implementations, dotted-path lookup
 - `internal/quartr/client.go` — retry, backoff, BuildURL
 - `internal/quartr/config.go` — config file precedence and shape

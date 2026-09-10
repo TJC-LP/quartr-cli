@@ -80,6 +80,7 @@ type listFlags struct {
 	tickers           string
 	isins             string
 	ciks              string
+	openfigis         string
 	companyIDs        string
 	ids               string
 	startDate         string
@@ -107,6 +108,7 @@ func addListFlags(fs *flag.FlagSet, lf *listFlags) {
 	fs.StringVar(&lf.tickers, "tickers", "", "comma-separated tickers; qualify with an exchange to avoid collisions, e.g. AAPL,NYSE:BLD")
 	fs.StringVar(&lf.isins, "isins", "", "comma-separated ISINs")
 	fs.StringVar(&lf.ciks, "ciks", "", "comma-separated SEC CIKs")
+	fs.StringVar(&lf.openfigis, "openfigis", "", "comma-separated OpenFIGI codes (figi, compositeFigi, or shareClassFigi); companies only")
 	fs.StringVar(&lf.companyIDs, "company-ids", "", "comma-separated Quartr company IDs")
 	fs.StringVar(&lf.ids, "ids", "", "comma-separated IDs for resources that support ids")
 	fs.StringVar(&lf.startDate, "start-date", "", "ISO 8601 start date")
@@ -127,7 +129,7 @@ func addListFlags(fs *flag.FlagSet, lf *listFlags) {
 // lists, and so the ones worth deduplicating. Scalars are left alone —
 // a cursor is an opaque token that may legitimately contain a comma.
 var listValuedParams = params(
-	"countries", "exchanges", "tickers", "isins", "ciks", "companyIds", "ids",
+	"countries", "exchanges", "tickers", "isins", "ciks", "openfigis", "companyIds", "ids",
 	"typeIds", "eventIds", "documentGroupIds", "states", "levels", "expand",
 )
 
@@ -155,6 +157,7 @@ func (lf listFlags) toParams(allowed paramSet, companyEndpoint bool) url.Values 
 	add("tickers", lf.tickers)
 	add("isins", lf.isins)
 	add("ciks", lf.ciks)
+	add("openfigis", lf.openfigis)
 	if companyEndpoint {
 		// Both flags feed the same parameter here, so merge them; setting
 		// them one after the other would silently drop --company-ids.

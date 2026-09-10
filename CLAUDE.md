@@ -19,10 +19,10 @@ pre-commit run --all-files    # lint+test against the whole tree
 ~/go/bin/golangci-lint run    # lint without pre-commit (needs v2.12+)
 ```
 
-`pre-commit install` was already run in this clone — every commit runs golangci-lint (with `--fix`) and `go test ./...`. The lint hook shells out to the `golangci-lint` on `PATH` instead of the upstream pre-commit repo, which builds the linter from source with whatever Go it finds; a linter built with Go < 1.26 refuses to load this config. Install the matching binary once:
+`pre-commit install` was already run in this clone — every commit runs golangci-lint (with `--fix`) and `go test ./...`. The lint hook shells out to the `golangci-lint` on `PATH` instead of the upstream pre-commit repo, which builds the linter from source with whatever Go it finds; a linter built with Go < 1.27 refuses to load this config, and one built with an older patch release than the `go` on `PATH` panics while type-checking the standard library (`file requires newer Go version`). Whenever the toolchain moves, rebuild the linter with it:
 
 ```bash
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 ```
 
 CI pins the same version through `golangci/golangci-lint-action@v7`.
@@ -32,7 +32,7 @@ CI pins the same version through `golangci/golangci-lint-action@v7`.
 Three internal packages, no external deps (Go stdlib only):
 
 - **`internal/quartr`** — HTTP client and config persistence. `Client.GetBytes` retries 429/5xx with backoff (honors `Retry-After`). `LoadConfig`/`SaveConfig` handle the JSON file at `~/.config/quartr/config.json`.
-- **`internal/cli`** — command dispatch and request shaping. The whole CLI surface is driven by a single `resources` map in `resources.go` keyed by command name; each entry describes the API path templates, allowed query params (`paramSet`), and download/stream URL fields. `handlers.go` dispatches the operations (list/get/summary/pages/chapters/download/stream) against any resource by reading from that map. Adding a new resource = one map entry, no per-command handler code.
+- **`internal/cli`** — command dispatch and request shaping. The whole CLI surface is driven by a single `resources` map in `resources.go` keyed by command name; each entry describes the API path templates, allowed query params (`paramSet`), and download/stream URL fields. `handlers.go` dispatches the operations (list/get/summary/pages/text/chapters/segments/download/stream) against any resource by reading from that map. Adding a new resource = one map entry, no per-command handler code.
 - **`internal/output`** — formats results as `table` / `json` / `csv` / `raw`. `--fields` supports dotted paths (`event.title`) via `getPath` recursive traversal.
 
 `cmd/quartr/main.go` is a 3-line entry point that calls `cli.Run`.
@@ -44,10 +44,12 @@ Three internal packages, no external deps (Go stdlib only):
 - **`--all` auto-bumps `--limit` to 500** unless the user passed `--limit` explicitly. Detection lives in `flagWasPassed` (string-scan over the raw args, since the `flag` package can't distinguish "default" from "explicitly default").
 - **`parseInterspersed`** in `flags.go` lets users write `cmd <id> --flag value`. The stdlib `flag` package stops at the first positional, so we shuffle flags before positionals before delegating.
 - **Downloads do NOT send `x-api-key` by default** — the Quartr `fileUrl` is publicly fetchable. `--with-api-key` is the opt-in.
+- **`text` streams to stdout by default; `download` writes a file by default.** Both share `saveURL`. The asymmetry is deliberate: parsed Markdown is meant to be piped or redirected, while PDFs and audio are not. Don't unify them.
+- **`/text` returns a link, not text.** `DocumentTextDto` is `{documentId, textUrl, updatedAt, createdAt}`; the Markdown lives at `textUrl` on the CDN. `--metadata` exposes the envelope.
 
 ## Lint config notes
 
-- golangci-lint v2 syntax (config has `version: "2"` at top). v1 is built with Go 1.24 and rejects this repo's Go 1.26 target — never downgrade.
+- golangci-lint v2 syntax (config has `version: "2"` at top). v1 is built with Go 1.24 and rejects this repo's Go 1.27 target — never downgrade.
 - `gomodguard` is referenced as `gomodguard_v2` after the v2.12 deprecation rename.
 - `gocritic.hugeParam` is intentionally disabled — passing `resource` (200B) by value is the design, not a perf bug.
 - `gosec G304/G602` excluded globally — file paths from CLI args and bounds-checked slice indexes are inherent to the tool.

@@ -35,6 +35,7 @@ Examples:
   quartr events list --tickers AAPL --sort-by date --direction desc --limit 5
   quartr transcripts list --tickers MSFT --expand event --limit 10
   quartr transcripts download 432907 --output transcript.json
+  quartr reports text 105446 --output apple-10k.md
   quartr live transcripts stream 127537 --transcript-version 1.7
   quartr request get /events --query tickers=AAPL --query limit=3 --format json
 `, quartr.Version, quartr.DefaultBaseURL, quartr.DefaultConfigPath(), strings.Join(cmds, ", "))
@@ -60,33 +61,31 @@ Examples:
 `)
 }
 
-func (a *app) printResourceHelp(r resource) {
+// resourceOps lists the operations a resource supports, in the order help
+// shows them: the ones the resource map enables plus the companies-only
+// resolve.
+func resourceOps(r resource) []string {
 	ops := []string{}
-	if r.listPath != "" {
-		ops = append(ops, "list")
+	add := func(enabled bool, op string) {
+		if enabled {
+			ops = append(ops, op)
+		}
 	}
-	if r.getPath != "" {
-		ops = append(ops, "get <id>")
-	}
-	if r.name == "companies" {
-		ops = append(ops, "resolve <ticker|cik>")
-	}
-	if r.summaryPath != "" {
-		ops = append(ops, "summary <id>")
-	}
-	if r.pagesPath != "" {
-		ops = append(ops, "pages <id>")
-	}
-	if r.chaptersPath != "" {
-		ops = append(ops, "chapters <id>")
-	}
-	if r.downloadField != "" {
-		ops = append(ops, "download <id>")
-	}
-	if r.streamField != "" {
-		ops = append(ops, "stream <id>")
-	}
+	add(r.listPath != "", "list")
+	add(r.getPath != "", "get <id>")
+	add(r.name == "companies", "resolve <ticker|cik|figi>")
+	add(r.summaryPath != "", "summary <id>")
+	add(r.pagesPath != "", "pages <id>")
+	add(r.textPath != "", "text <id>")
+	add(r.chaptersPath != "", "chapters <id>")
+	add(r.segmentsPath != "", "segments <id>")
+	add(r.downloadField != "", "download <id>")
+	add(r.streamField != "", "stream <id>")
+	return ops
+}
 
+func (a *app) printResourceHelp(r resource) {
+	ops := resourceOps(r)
 	fmt.Fprintf(a.out, "Usage:\n  quartr %s <%s> [flags]\n\nOperations:\n", r.name, strings.Join(ops, " | "))
 	for _, op := range ops {
 		fmt.Fprintf(a.out, "  %s\n", op)
@@ -129,12 +128,24 @@ Downloads:
   download <id> --output -    streams the document to stdout, nothing else
 `, r.name)
 	}
+	if r.textPath != "" {
+		fmt.Fprint(a.out, `
+Parsed text (Markdown, separate Quartr package; 403 without it):
+  text <id>                   prints the parsed Markdown on stdout
+  text <id> --output P        writes P instead
+  text <id> --metadata        prints the envelope (textUrl, updatedAt) instead
+`)
+	}
 	fmt.Fprint(a.out, `
 Examples:
 `)
 	switch r.name {
 	case "companies":
-		fmt.Fprint(a.out, "  quartr companies list --tickers AAPL\n  quartr companies resolve BLD          # every company using that ticker\n  quartr companies get 4742 --format json\n")
+		fmt.Fprint(a.out, "  quartr companies list --tickers AAPL\n  quartr companies list --openfigis BBG000B9XRY4\n  quartr companies resolve BLD          # every company using that ticker\n  quartr companies get 4742 --format json\n  quartr companies segments 4742 --format json\n")
+	case "reports":
+		fmt.Fprint(a.out, "  quartr reports list --tickers AAPL --type-ids 11 --limit 5\n  quartr reports text 105446 | head -50\n  quartr reports text 105446 --output apple-10k.md\n  quartr reports download 105446 --output apple-10k.pdf\n")
+	case "slides":
+		fmt.Fprint(a.out, "  quartr slides list --tickers AAPL --limit 5\n  quartr slides text 152141 > deck.md\n  quartr slides pages 152141 --format csv\n")
 	case "events":
 		fmt.Fprint(a.out, "  quartr events list --tickers AAPL --sort-by date --direction desc\n  quartr events summary 128301 --length long --plain\n")
 	case "transcripts":

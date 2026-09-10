@@ -100,9 +100,13 @@ func (a *app) handleResource(r resource, args []string) error {
 	case "summary", "summarize":
 		return a.summaryResource(r, rest)
 	case "pages":
-		return a.childListResource(r, r.pagesPath, params("limit", "cursor", "direction"), rest, "pages")
+		return a.childListResource(r, r.pagesPath, childListParams, rest, "pages")
 	case "chapters":
-		return a.childListResource(r, r.chaptersPath, params("limit", "cursor", "direction", "levels"), rest, "chapters")
+		return a.childListResource(r, r.chaptersPath, mergeParams(childListParams, params("levels")), rest, "chapters")
+	case "segments":
+		return a.childListResource(r, r.segmentsPath, childListParams, rest, "segments")
+	case "text", "markdown":
+		return a.textResource(r, rest)
 	case "download", "dl":
 		return a.downloadResource(r, rest)
 	case "stream":
@@ -211,20 +215,23 @@ func (a *app) resolveResource(r resource, args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return usagef("usage: quartr companies resolve <ticker|cik>   (e.g. BLD, NYSE:BLD, 0001739445)")
+		return usagef("usage: quartr companies resolve <ticker|cik|figi>   (e.g. BLD, NYSE:BLD, 0001739445, BBG000B9XRY4)")
 	}
 
 	query := strings.TrimSpace(fs.Arg(0))
 	if query == "" || strings.ContainsAny(query, " \t") {
-		return usagef("the Quartr API has no company name search; pass a ticker (BLD or NYSE:BLD) or a CIK")
+		return usagef("the Quartr API has no company name search; pass a ticker (BLD or NYSE:BLD), a CIK, or an OpenFIGI")
 	}
 
 	ctx := context.Background()
 	var companies []map[string]any
 	var err error
-	if looksLikeCIK(query) {
+	switch {
+	case looksLikeCIK(query):
 		companies, err = a.lookupCompanies(ctx, "ciks", query, nil)
-	} else {
+	case looksLikeFIGI(query):
+		companies, err = a.lookupCompanies(ctx, "openfigis", query, nil)
+	default:
 		specs := parseTickerSpecs(query)
 		companies, err = a.lookupCompanies(ctx, "tickers", bareTickerCSV(specs), specs)
 	}
@@ -335,24 +342,66 @@ func (a *app) downloadResource(r resource, args []string) error {
 		return err
 	}
 
-	apiKey := ""
-	if *withAPIKey {
-		apiKey = a.cfg.APIKey()
-	}
-
-	// `--output -` streams the document itself to stdout so it can be piped
-	// or redirected. Everything else this command prints goes to stderr, so
-	// `quartr transcripts download <id> --output - > f.json` writes the
-	// document and nothing else.
-	if *outPath == "-" {
-		_, err := a.client.Download(context.Background(), downloadURL, apiKey, a.out)
-		return err
-	}
-
 	dest := *outPath
 	if dest == "" {
 		dest = defaultFileName(r.name, id, downloadURL)
 	}
+	return a.saveURL(downloadURL, *withAPIKey, dest)
+}
+
+// textResource implements `quartr reports text <id>` and `quartr slides text
+// <id>`. The endpoint returns a CDN link to the parsed Markdown rather than
+// the text itself, so the command follows the link by default and prints the
+// Markdown on stdout — that is what a `| head`, `> report.md`, or an LLM
+// context wants. Unlike `download`, stdout is the default: the content is
+// text, and the file name Quartr gives it is a content hash nobody wants.
+// Pass --metadata to see the envelope (textUrl, updatedAt) instead.
+func (a *app) textResource(r resource, args []string) error {
+	if r.textPath == "" {
+		return fmt.Errorf("%s does not have a text endpoint; parsed text exists for reports and slides only", r.name)
+	}
+	fs := newFlagSet(r.name+" text", a.errOut)
+	outPath := fs.String("output", "-", "write the Markdown to this path instead of stdout")
+	metadata := fs.Bool("metadata", false, "print the text metadata (textUrl, updatedAt) instead of the Markdown")
+	fields := fs.String("fields", "", "comma-separated output fields; only with --metadata")
+	withAPIKey := fs.Bool("with-api-key", false, "include x-api-key when fetching the text URL")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: quartr %s text <id> [--output file] [--metadata]", r.name)
+	}
+
+	path := strings.ReplaceAll(r.textPath, "{id}", url.PathEscape(fs.Arg(0)))
+	obj, _, err := a.client.GetJSON(context.Background(), path, nil)
+	if err != nil {
+		return err
+	}
+	if *metadata {
+		return output.Write(a.out, obj, output.Options{Format: a.cfg.Format(), Fields: parseCSV(*fields)})
+	}
+	textURL, err := extractStringField(obj, "textUrl")
+	if err != nil {
+		return err
+	}
+	return a.saveURL(textURL, *withAPIKey, *outPath)
+}
+
+// saveURL fetches downloadURL into dest. dest "-" streams the body to stdout
+// so it can be piped or redirected; everything else this command prints goes
+// to stderr, so `quartr transcripts download <id> --output - > f.json` writes
+// the document and nothing else. Any other dest is created (with parents)
+// and confirmed with a `Saved <path>` line on stderr.
+func (a *app) saveURL(downloadURL string, withAPIKey bool, dest string) error {
+	apiKey := ""
+	if withAPIKey {
+		apiKey = a.cfg.APIKey()
+	}
+	if dest == "-" {
+		_, err := a.client.Download(context.Background(), downloadURL, apiKey, a.out)
+		return err
+	}
+
 	if dir := filepath.Dir(dest); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err

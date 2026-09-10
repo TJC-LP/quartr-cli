@@ -36,7 +36,8 @@ func errorHint(err error) string {
 	case http.StatusForbidden:
 		return "hint: 403 means this endpoint is not included in your API tier, not that your key is wrong " +
 			"(a rejected key returns 401). Every other endpoint keeps working with the same key. " +
-			"Endpoints seen gated this way: `events summary`, `audio list`, `live transcripts list`."
+			"Endpoints seen gated this way: `events summary`, `audio list`, `live transcripts list`, " +
+			"`companies segments`, and `reports text` / `slides text` (the parsed documents package)."
 	case http.StatusUnauthorized:
 		return "hint: 401 means the API key was rejected. Check `quartr auth show`, QUARTR_API_KEY, " +
 			"and any --api-key flag."

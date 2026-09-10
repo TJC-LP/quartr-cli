@@ -24,7 +24,7 @@ jobs:
 
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.12.0
+          version: v2.13.2
 
   # Exercises the release recipe on every PR. Without this, a broken cross
   # compile only shows up after a tag is pushed, which is the worst time.

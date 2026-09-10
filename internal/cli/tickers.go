@@ -224,6 +224,21 @@ func looksLikeCIK(s string) bool {
 	return true
 }
 
+// looksLikeFIGI reports whether a `companies resolve` argument is an OpenFIGI
+// identifier: twelve upper-case alphanumerics with "G" in the third position
+// (BBG000B9XRY4). No listed ticker has that shape.
+func looksLikeFIGI(s string) bool {
+	if len(s) != 12 || s[2] != 'G' {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
 // dedupeCSV removes repeated entries from a comma-separated filter value,
 // ignoring case. Quartr accepts duplicates, but they inflate the URL and make
 // `--tickers "$LIST"` fragile when the caller builds the list by hand.

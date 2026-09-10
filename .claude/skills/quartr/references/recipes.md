@@ -41,10 +41,11 @@ quartr companies resolve CE
 # 16930  Cortus Energy            SE       OM:CE
 ```
 
-`resolve` takes a ticker, an `EXCHANGE:TICKER` pair, or a CIK, and lists every
-candidate with the exchange pairs that matched. There is no name search — the
-API has no `search`/`query`/`name` parameter — so never try to look a company
-up by name.
+`resolve` takes a ticker, an `EXCHANGE:TICKER` pair, a CIK, or an OpenFIGI
+(`BBG000B9XRY4`), and lists every candidate with the exchange pairs that
+matched. There is no name search — the API has no `search`/`query`/`name`
+parameter — so never try to look a company up by name. When the user hands you
+a FIGI, `quartr companies list --openfigis <figi>` is exact and collision-free.
 
 Once the exchange is known, qualify the ticker anywhere `--tickers` is
 accepted and the CLI resolves it to a companyId before querying:
@@ -144,6 +145,58 @@ country first.
 **Pitfall:** `--with-api-key` is *not* needed for the file download — Quartr's
 `fileUrl` is publicly fetchable. Only add it if the file URL itself returns
 401/403.
+
+**If the user wants to read the filing rather than have the PDF**, skip the
+download and use recipe 3a.
+
+---
+
+## 3a. Read a report or slide deck as Markdown
+
+**Intent:** "What does Apple's latest 10-K say about services margins?" /
+"Summarize this deck" / anything where the content matters and the PDF is a
+detour.
+
+Quartr's parsed documents package renders each report and slide deck to one
+Markdown file with headings and tables preserved. `text` fetches it:
+
+```bash
+quartr reports text <id>                    # Markdown on stdout
+quartr reports text <id> --output 10k.md    # or to a file
+quartr slides text <id> | head -80          # first slides of a deck
+```
+
+Find the id the same way as recipe 3 (pull wide, sort locally on `createdAt`),
+then:
+
+```bash
+quartr reports text 105446 > apple-q4-2019.md
+```
+
+Tables come through as pipe tables, so financial statements are greppable:
+
+```bash
+quartr reports text 105446 | grep -i 'total net sales'
+# |Total net sales (1)|64,040|62,900|260,174|265,595|
+```
+
+Response shape of `--metadata` (for provenance or freshness checks):
+
+```json
+{"data":{"documentId":105446,"textUrl":"https://files.quartr.com/document-artifacts/…/….markdown?ref=…","updatedAt":"2026-08-05T22:36:36.000Z","createdAt":"…"}}
+```
+
+**Pitfalls:**
+
+- `text` prints to stdout by default; `download` writes a file by default. Do
+  not expect a `Saved` line from `text` unless you passed `--output`.
+- Parsed text is a separately licensed package. A `403` here with a working
+  key elsewhere means the plan lacks it — say so, do not debug auth.
+- Coverage is per document: a recent filing may have `text` before an old one
+  does. If `text` fails for one document, fall back to `download` and say the
+  parsed rendering is not available for it.
+- Transcripts have no `text` endpoint: `quartr transcripts download <id>
+  --output -` already returns structured JSON with the speaker turns.
 
 ---
 

@@ -13,6 +13,7 @@ It is designed for API subscribers who want a terminal-friendly interface for co
 - Supports `table`, `json`, `csv`, and `raw` output.
 - Supports cursor pagination with `--all`.
 - Supports downloads from metadata URL fields.
+- Fetches Quartr's parsed Markdown for reports and slide decks with `reports text` / `slides text`.
 - Includes a raw `request get` escape hatch for endpoints or parameters not wrapped yet.
 - Retries transient `429` and `5xx` responses with short backoff and honors `Retry-After` when present.
 - Uses only the Go standard library.
@@ -188,6 +189,20 @@ List report pages:
 quartr reports pages 12345 --format csv
 ```
 
+Print the parsed Markdown of a report or slide deck (see [Parsed documents](#parsed-documents)):
+
+```bash
+quartr reports text 105446 | head -50
+quartr slides text 152141 --output deck.md
+```
+
+Look a company up by OpenFIGI:
+
+```bash
+quartr companies list --openfigis BBG000B9XRY4
+quartr companies resolve BBG000B9XRY4
+```
+
 Stream a live transcript JSONL URL to stdout:
 
 ```bash
@@ -222,6 +237,7 @@ Most list commands support a shared set of filters where Quartr exposes them:
 --exchanges
 --isins
 --ciks
+--openfigis          companies only
 --start-date
 --end-date
 --updated-after
@@ -354,7 +370,26 @@ hint: 403 means this endpoint is not included in your API tier, not that your ke
 (a rejected key returns 401). ...
 ```
 
-Endpoints observed gated this way: `events summary`, `audio list`, `live transcripts list`. A rejected key returns `401` and gets a hint pointing at `quartr auth show` instead.
+Endpoints observed gated this way: `events summary`, `audio list`, `live transcripts list`, `companies segments` (a legacy dataset Quartr no longer opens to new partners), and `reports text` / `slides text` when the parsed documents package is not on the plan. A rejected key returns `401` and gets a hint pointing at `quartr auth show` instead.
+
+## Parsed documents
+
+Quartr sells the extracted text of reports and slide decks as a separate package: one Markdown file per document, with headings and tables preserved, meant for search indexes and LLM context windows. The API answers `/documents/reports/{id}/text` and `/documents/slides/{id}/text` with a CDN link rather than the text itself; `text` follows the link for you.
+
+```bash
+quartr reports text 105446                      # Markdown on stdout
+quartr reports text 105446 --output apple.md    # or to a file; `Saved apple.md` goes to stderr
+quartr reports text 105446 --metadata           # the envelope: documentId, textUrl, updatedAt
+quartr slides text 152141 | head -40
+```
+
+Unlike `download`, `text` writes to **stdout** by default: the content is text, and the file name Quartr gives it is a content hash. The markdown fetch does not send `x-api-key` unless you pass `--with-api-key`, the same as downloads.
+
+Without the package the endpoint returns `403`; the CLI's hint says so. Transcripts have no `text` endpoint because `transcripts download` already returns structured JSON.
+
+## Company segments
+
+`quartr companies segments <id>` lists segment breakdowns (revenue or operating income by business line or geography) from S&P 500 annual reports. Quartr marks the dataset legacy and does not open it to new partners, so expect `403` unless your plan predates that.
 
 ## Downloads
 

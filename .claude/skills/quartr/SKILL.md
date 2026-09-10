@@ -1,6 +1,6 @@
 ---
 name: quartr
-description: Query Quartr Public API v3 via the local `quartr` CLI — companies, events, earnings calls, transcripts, reports, slides, audio, live events. Use when the user asks about a ticker's earnings or fiscal periods, SEC filings (10-K / 10-Q / 8-K / 20-F / proxy) via Quartr, downloading transcripts or reports, streaming live calls, or anything sourced from api.quartr.com / quartr.com.
+description: Query Quartr Public API v3 via the local `quartr` CLI — companies, events, earnings calls, transcripts, reports, slides, parsed Markdown of reports and slides, audio, live events. Use when the user asks about a ticker's earnings or fiscal periods, SEC filings (10-K / 10-Q / 8-K / 20-F / proxy) via Quartr, reading or downloading transcripts, reports or slides as text, streaming live calls, or anything sourced from api.quartr.com / quartr.com.
 ---
 
 # quartr
@@ -92,8 +92,11 @@ explicitly passed, `--all` raises it to 500 to minimize round-trips.
 ```bash
 # Companies
 quartr companies list --tickers AAPL,MSFT --fields id,name,country
+quartr companies list --openfigis BBG000B9XRY4
 quartr companies resolve CE                # every company using that ticker
+quartr companies resolve BBG000B9XRY4      # a CIK or OpenFIGI works too
 quartr companies get 4742 --format json
+quartr companies segments 4742             # legacy dataset; 403 on most plans
 
 # Events (earnings calls, AGMs, etc.)
 quartr events list --tickers AAPL --sort-by date --direction desc --limit 10
@@ -109,12 +112,15 @@ quartr transcripts chapters <id> --levels 1,2
 
 # Reports (10-K, 10-Q, 8-K, etc.)
 quartr reports list --tickers AAPL --type-ids 11 --limit 5
+quartr reports text <id>                   # parsed Markdown on stdout — read this, not the PDF
+quartr reports text <id> --output 10k.md
 quartr reports download <id> --output annual-report.pdf
 quartr reports pages <id> --format csv
 quartr reports summary <id> --length long --plain
 
 # Slides
 quartr slides list --tickers AAPL --limit 5
+quartr slides text <id>                    # parsed Markdown of the deck
 quartr slides download <id>
 quartr slides pages <id>
 
@@ -158,13 +164,22 @@ quartr request get /events --query tickers=AAPL --query limit=3 --format json
   Credito Emiliano and Cortus Energy. Run `quartr companies resolve <ticker>`
   when a symbol might be shared, then either use `--company-ids` or qualify the
   ticker as `NYSE:BLD` (the CLI resolves it to a companyId before querying).
-  There is no name search in the API — tickers and CIKs only.
+  There is no name search in the API — tickers, CIKs and OpenFIGIs only
+  (`--openfigis` on `companies list`; `resolve` recognises a FIGI by shape).
 - **`--expand company` is a client-side join.** The API rejects
   `expand=company`; the CLI strips it and batch-fetches `/companies` instead.
   Use it whenever rows need to be attributable — otherwise they carry only a
   bare `companyId` and a collision is invisible.
+- **Read reports and slides with `text`, not `download`.** `reports text <id>`
+  and `slides text <id>` print Quartr's parsed Markdown (headings and tables
+  preserved) on stdout — pipe it to `head`, redirect it, or feed it to a model.
+  `download` fetches the PDF and is only right when the user wants the file.
+  `text` is a separate paid package: without it the endpoint returns 403.
+  Transcripts have no `text`; `transcripts download --output -` is already JSON.
 - **Tier-restricted endpoints** return `403 Forbidden` on the user's API tier.
-  Observed restrictions: `events summary`, `audio list`, `live transcripts list`.
+  Observed restrictions: `events summary`, `audio list`, `live transcripts list`,
+  `companies segments`; `reports text` / `slides text` without the parsed
+  documents package.
   The CLI prints a `hint:` line clarifying that 403 is entitlement, not
   authentication. Surface the error verbatim — do not retry, hide, silently
   fall back, or start debugging the API key. A rejected key returns 401.
@@ -186,6 +201,7 @@ For a worked example of each, see `references/recipes.md`:
 - Find a company by ticker and grab its ID
 - Pull the last N earnings calls for a ticker
 - Download the latest annual report (10-K)
+- Read a report or slide deck as Markdown
 - Fetch all transcripts for a ticker, paginated, with parent event metadata
 - Stream a live earnings transcript
 - Use the raw `request get` for an unwrapped endpoint
