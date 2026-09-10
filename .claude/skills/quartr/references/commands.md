@@ -212,6 +212,12 @@ and pass it via `--type-ids`.
 
 ## Key code locations (for skill maintenance)
 
+Quartr publishes the live spec at <https://api.quartr.com/public/v3/openapi.json>
+and a docs index at <https://quartr.com/docs/llms.txt> (datasets, changelog at
+`/docs/changelogs/api-updates.md`). When Quartr announces a new dataset, diff
+the spec's `paths` against the `resources` map first — that is how `text`,
+`segments`, and `openfigis` were found.
+
 If the CLI gets new commands, refresh this reference from:
 
 - `internal/cli/app.go` — top-level command dispatch
